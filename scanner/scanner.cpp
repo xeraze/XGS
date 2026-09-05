@@ -16,16 +16,20 @@ static DWORD find_process_id(const char* name) {
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) return 0;
 
-    PROCESSENTRY32 entry;
+    PROCESSENTRY32W entry;
     entry.dwSize = sizeof(entry);
 
-    if (Process32First(snapshot, &entry)) {
+    int wide_len = MultiByteToWideChar(CP_UTF8, 0, name, -1, NULL, 0);
+    std::vector<wchar_t> wide_name(wide_len);
+    MultiByteToWideChar(CP_UTF8, 0, name, -1, wide_name.data(), wide_len);
+
+    if (Process32FirstW(snapshot, &entry)) {
         do {
-            if (_stricmp(entry.szExeFile, name) == 0) {
+            if (_wcsicmp(entry.szExeFile, wide_name.data()) == 0) {
                 CloseHandle(snapshot);
                 return entry.th32ProcessID;
             }
-        } while (Process32Next(snapshot, &entry));
+        } while (Process32NextW(snapshot, &entry));
     }
 
     CloseHandle(snapshot);
@@ -197,4 +201,4 @@ bool scanner_read_by_config(ScannerHandle* handle,
     }
 }
 
-} // extern "C"
+}
