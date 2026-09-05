@@ -16,6 +16,7 @@ import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
@@ -32,7 +33,7 @@ public class Main extends Application {
 
     private static final Color BG_BASE = Color.rgb(12, 12, 18);
     private static final Color BG_CARD = Color.rgb(22, 22, 30);
-    private static final Color BG_GLASS = Color.rgb(255, 255, 255, 0.05);
+    private static final Color BG_GLASS = Color.rgb(255, 255, 255, 0.03);
     private static final Color ACCENT = Color.rgb(99, 179, 237);
     private static final Color ACCENT_GLOW = Color.rgb(99, 179, 237, 0.4);
     private static final Color TEXT = Color.rgb(240, 240, 245);
@@ -44,43 +45,51 @@ public class Main extends Application {
     private Process engineProcess;
     private TextArea logArea;
     private Label statusLabel;
+    private double dragOffsetX, dragOffsetY;
 
     @Override
     public void start(Stage primaryStage) {
         showLoadingScreen(primaryStage);
     }
 
+    private void centerStage(Stage stage) {
+        var screen = Screen.getPrimary();
+        var bounds = screen.getBounds();
+        stage.setX((bounds.getWidth() - stage.getWidth()) / 2);
+        stage.setY((bounds.getHeight() - stage.getHeight()) / 2);
+    }
+
     private void showLoadingScreen(Stage primaryStage) {
         StackPane root = new StackPane();
         root.setBackground(new Background(new BackgroundFill(BG_BASE, null, null)));
 
-        VBox loadBox = new VBox(20);
+        VBox loadBox = new VBox(24);
         loadBox.setAlignment(Pos.CENTER);
 
         Text title = new Text(APP_NAME);
-        title.setFont(Font.font("Segoe UI", FontWeight.BOLD, 42));
+        title.setFont(Font.font("Segoe UI", FontWeight.BOLD, 48));
         title.setFill(TEXT);
-        title.setEffect(new Glow(0.3));
+        title.setEffect(new Glow(0.2));
+
+        Text subtitle = new Text("v" + APP_VERSION);
+        subtitle.setFont(Font.font("Segoe UI", 13));
+        subtitle.setFill(TEXT_DIM);
 
         ProgressIndicator spinner = new ProgressIndicator();
         spinner.setStyle("-fx-progress-color: #63B3ED;");
-        spinner.setMaxSize(50, 50);
+        spinner.setMaxSize(40, 40);
 
-        Text status = new Text("Loading...");
-        status.setFont(Font.font("Segoe UI", 14));
-        status.setFill(TEXT_DIM);
-
-        loadBox.getChildren().addAll(title, spinner, status);
+        loadBox.getChildren().addAll(title, subtitle, spinner);
         root.getChildren().add(loadBox);
 
-        Scene scene = new Scene(root, 500, 350);
+        Scene scene = new Scene(root, 480, 320);
         primaryStage.initStyle(StageStyle.UNDECORATED);
         primaryStage.setScene(scene);
-        primaryStage.centerOnScreen();
         primaryStage.show();
+        centerStage(primaryStage);
 
         new Thread(() -> {
-            try { Thread.sleep(1500); } catch (InterruptedException ignored) {}
+            try { Thread.sleep(1800); } catch (InterruptedException ignored) {}
             Platform.runLater(() -> {
                 primaryStage.close();
                 showMainUI(primaryStage);
@@ -90,6 +99,7 @@ public class Main extends Application {
 
     private void showMainUI(Stage primaryStage) {
         primaryStage.setTitle(APP_NAME);
+        primaryStage.initStyle(StageStyle.UNDECORATED);
 
         StackPane root = new StackPane();
         root.setBackground(new Background(new BackgroundFill(BG_BASE, null, null)));
@@ -114,21 +124,112 @@ public class Main extends Application {
 
         Scene scene = new Scene(root, 800, 550);
         primaryStage.setScene(scene);
-        primaryStage.centerOnScreen();
         primaryStage.show();
+        centerStage(primaryStage);
+
+        final double RESIZE_MARGIN = 6;
+        final double MIN_W = 600;
+        final double MIN_H = 400;
+
+        root.setOnMouseMoved(e -> {
+            double x = e.getX();
+            double y = e.getY();
+            double w = scene.getWidth();
+            double h = scene.getHeight();
+
+            boolean left = x < RESIZE_MARGIN;
+            boolean right = x > w - RESIZE_MARGIN;
+            boolean top = y < RESIZE_MARGIN;
+            boolean bottom = y > h - RESIZE_MARGIN;
+
+            if (left && top) root.setCursor(javafx.scene.Cursor.NW_RESIZE);
+            else if (right && top) root.setCursor(javafx.scene.Cursor.NE_RESIZE);
+            else if (left && bottom) root.setCursor(javafx.scene.Cursor.SW_RESIZE);
+            else if (right && bottom) root.setCursor(javafx.scene.Cursor.SE_RESIZE);
+            else if (left) root.setCursor(javafx.scene.Cursor.W_RESIZE);
+            else if (right) root.setCursor(javafx.scene.Cursor.E_RESIZE);
+            else if (top) root.setCursor(javafx.scene.Cursor.N_RESIZE);
+            else if (bottom) root.setCursor(javafx.scene.Cursor.S_RESIZE);
+            else root.setCursor(javafx.scene.Cursor.DEFAULT);
+        });
+
+        root.setOnMousePressed(e -> {
+            double x = e.getX();
+            double y = e.getY();
+            double w = scene.getWidth();
+            double h = scene.getHeight();
+
+            boolean left = x < RESIZE_MARGIN;
+            boolean right = x > w - RESIZE_MARGIN;
+            boolean top = y < RESIZE_MARGIN;
+            boolean bottom = h - y < RESIZE_MARGIN;
+
+            if (left || right || top || bottom) {
+                dragOffsetX = e.getScreenX() - primaryStage.getX();
+                dragOffsetY = e.getScreenY() - primaryStage.getY();
+            }
+        });
+
+        root.setOnMouseDragged(e -> {
+            javafx.scene.Cursor cursor = root.getCursor();
+            if (cursor == javafx.scene.Cursor.DEFAULT) return;
+
+            double mouseX = e.getScreenX();
+            double mouseY = e.getScreenY();
+            double startX = primaryStage.getX();
+            double startY = primaryStage.getY();
+            double startW = primaryStage.getWidth();
+            double startH = primaryStage.getHeight();
+
+            if (cursor == javafx.scene.Cursor.E_RESIZE ||
+                cursor == javafx.scene.Cursor.NE_RESIZE ||
+                cursor == javafx.scene.Cursor.SE_RESIZE) {
+                double newW = Math.max(MIN_W, mouseX - startX);
+                primaryStage.setWidth(newW);
+            }
+            if (cursor == javafx.scene.Cursor.S_RESIZE ||
+                cursor == javafx.scene.Cursor.SE_RESIZE ||
+                cursor == javafx.scene.Cursor.SW_RESIZE) {
+                double newH = Math.max(MIN_H, mouseY - startY);
+                primaryStage.setHeight(newH);
+            }
+            if (cursor == javafx.scene.Cursor.W_RESIZE ||
+                cursor == javafx.scene.Cursor.NW_RESIZE ||
+                cursor == javafx.scene.Cursor.SW_RESIZE) {
+                double newW = Math.max(MIN_W, startX + startW - mouseX);
+                if (newW > MIN_W) {
+                    primaryStage.setX(mouseX);
+                    primaryStage.setWidth(newW);
+                }
+            }
+            if (cursor == javafx.scene.Cursor.N_RESIZE ||
+                cursor == javafx.scene.Cursor.NW_RESIZE ||
+                cursor == javafx.scene.Cursor.NE_RESIZE) {
+                double newH = Math.max(MIN_H, startY + startH - mouseY);
+                if (newH > MIN_H) {
+                    primaryStage.setY(mouseY);
+                    primaryStage.setHeight(newH);
+                }
+            }
+        });
     }
 
     private HBox createHeader(Stage stage) {
         HBox header = new HBox();
         header.setAlignment(Pos.CENTER_LEFT);
-        header.setPadding(new Insets(18, 24, 18, 24));
+        header.setPadding(new Insets(10, 24, 10, 24));
         header.setBackground(new Background(new BackgroundFill(
                 Color.rgb(16, 16, 22, 0.9), null, null)));
 
-        Region dragRegion = new Region();
-        HBox.setHgrow(dragRegion, Priority.ALWAYS);
-        dragRegion.setOnMousePressed(e -> {
-            // drag support
+        final double[] offset = new double[2];
+
+        header.setOnMousePressed(e -> {
+            offset[0] = e.getScreenX() - stage.getX();
+            offset[1] = e.getScreenY() - stage.getY();
+        });
+        header.setOnMouseDragged(e -> {
+            stage.setX(e.getScreenX() - offset[0]);
+            stage.setY(e.getScreenY() - offset[1]);
         });
 
         VBox titleBox = new VBox(2);
@@ -142,6 +243,9 @@ public class Main extends Application {
         subtitle.setFill(TEXT_DIM);
 
         titleBox.getChildren().addAll(title, subtitle);
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
 
         HBox controls = new HBox(10);
         controls.setAlignment(Pos.CENTER_RIGHT);
@@ -159,7 +263,7 @@ public class Main extends Application {
         });
 
         controls.getChildren().addAll(startBtn, stopBtn, closeBtn);
-        header.getChildren().addAll(titleBox, dragRegion, controls);
+        header.getChildren().addAll(titleBox, spacer, controls);
 
         return header;
     }
@@ -171,20 +275,20 @@ public class Main extends Application {
         btn.setBackground(new Background(new BackgroundFill(color, new CornerRadii(6), null)));
 
         DropShadow shadow = new DropShadow();
-        shadow.setColor(color.deriveColor(0, 1, 1, 0.5));
-        shadow.setRadius(12);
-        shadow.setSpread(0.2);
+        shadow.setColor(color.deriveColor(0, 1, 1, 0.4));
+        shadow.setRadius(10);
+        shadow.setSpread(0.15);
         btn.setEffect(shadow);
 
         btn.setOnMouseEntered(e -> {
             btn.setBackground(new Background(new BackgroundFill(
-                    color.brighter(), new CornerRadii(6), null)));
-            shadow.setRadius(18);
+                    color.deriveColor(0, 1, 1.05, 1), new CornerRadii(6), null)));
+            shadow.setRadius(16);
         });
         btn.setOnMouseExited(e -> {
             btn.setBackground(new Background(new BackgroundFill(
                     color, new CornerRadii(6), null)));
-            shadow.setRadius(12);
+            shadow.setRadius(10);
         });
 
         btn.setPadding(new Insets(8, 20, 8, 20));
@@ -345,7 +449,19 @@ public class Main extends Application {
         title.setFill(TEXT);
 
         TextField processField = createStyledField("SFHR.exe");
-        TextField appIdField = createStyledField("123456789012345");
+        TextField appIdField = createStyledField("1404735389603860503");
+
+        Text processHint = new Text("Process name with .exe (e.g. SFHR.exe)");
+        processHint.setFont(Font.font("Segoe UI", 10));
+        processHint.setFill(TEXT_DIM);
+
+        Text appIdHint = new Text("Discord Application ID (17-20 digits)");
+        appIdHint.setFont(Font.font("Segoe UI", 10));
+        appIdHint.setFill(TEXT_DIM);
+
+        Text errorText = new Text("");
+        errorText.setFont(Font.font("Segoe UI", 11));
+        errorText.setFill(RED);
 
         HBox buttons = new HBox(10);
         buttons.setAlignment(Pos.CENTER_RIGHT);
@@ -355,22 +471,36 @@ public class Main extends Application {
 
         Button okBtn = createGlowButton("Add", ACCENT);
         okBtn.setOnAction(e -> {
-            String process = processField.getText();
-            String appId = appIdField.getText();
-            if (!process.isEmpty() && !appId.isEmpty()) {
-                saveConfig(process, appId);
-                dialog.close();
+            String process = processField.getText().trim();
+            String appId = appIdField.getText().trim();
+
+            if (process.isEmpty()) {
+                errorText.setText("Enter process name");
+                return;
             }
+            if (!process.toLowerCase().endsWith(".exe")) {
+                errorText.setText("Process must end with .exe");
+                return;
+            }
+            if (appId.isEmpty()) {
+                errorText.setText("Enter Discord App ID");
+                return;
+            }
+            if (!appId.matches("\\d{17,20}")) {
+                errorText.setText("App ID must be 17-20 digits");
+                return;
+            }
+
+            saveConfig(process, appId);
+            dialog.close();
         });
 
         buttons.getChildren().addAll(cancelBtn, okBtn);
 
-        root.getChildren().addAll(title, processField, appIdField, buttons);
+        root.getChildren().addAll(title, processField, processHint, appIdField, appIdHint, errorText, buttons);
 
-        Scene scene = new Scene(root, 380, 250);
-        scene.setFill(Color.TRANSPARENT);
+        Scene scene = new Scene(root, 420, 320);
         dialog.setScene(scene);
-        dialog.initStyle(StageStyle.TRANSPARENT);
         dialog.centerOnScreen();
         dialog.show();
     }

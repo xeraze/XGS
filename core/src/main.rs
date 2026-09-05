@@ -276,6 +276,13 @@ fn launch_gui() {
 
     cmd.arg("-jar").arg(&jar);
 
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
     match cmd.spawn() {
         Ok(_) => println!("[XGS] GUI launched"),
         Err(e) => eprintln!("[XGS] Failed to launch GUI: {}", e),
