@@ -1,0 +1,37 @@
+# Build
+target/
+build/
+*.o
+*.obj
+
+# Binaries (root copies)
+/*.dll
+/*.exe
+/*.jar
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Java
+*.class
+MANIFEST.MF
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Logs
+*.log
+
+# Release
+dist/

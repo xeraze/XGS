@@ -1,0 +1,28 @@
+{
+  "process_name": "SFHR.exe",
+  "discord_app_id": "123456789012345",
+  "scan_type": "offsets",
+  "pointers": {
+    "class_id": {
+      "base": "SFHR.exe+0x02AB120",
+      "offsets": [64, 24]
+    },
+    "mission_name": {
+      "base": "SFHR.exe+0x02AB120",
+      "offsets": [64, 44]
+    },
+    "current_score": {
+      "base": "SFHR.exe+0x02AB120",
+      "offsets": [64, 52]
+    }
+  },
+  "rpc_template": {
+    "details": "Class: {class_name}",
+    "state": "Mission: {mission_name}",
+    "large_image": "sfhr_logo",
+    "large_image_text": "Strike Force Heroes Remastered",
+    "small_image": "class_{class_id}",
+    "small_image_text": "Playing as {class_name}"
+  },
+  "requires_elevation": false
+}
