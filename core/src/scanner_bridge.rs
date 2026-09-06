@@ -35,6 +35,13 @@ extern "C" {
         value_type: i32,
         out_value: *mut std::ffi::c_void,
     ) -> bool;
+    fn scanner_aob_scan(
+        handle: *mut ScannerHandle,
+        pattern: *const u8,
+        mask: *const c_char,
+        start_address: usize,
+        scan_size: usize,
+    ) -> usize;
 }
 
 pub struct Scanner {
@@ -172,6 +179,24 @@ impl Scanner {
                 Some(Box::new(cstr.to_str().unwrap_or("").to_string()))
             }
             _ => None,
+        }
+    }
+
+    pub fn aob_scan(&self, pattern: &[u8], mask: &str, start_address: usize, scan_size: usize) -> Option<usize> {
+        let c_mask = CString::new(mask).ok()?;
+        let addr = unsafe {
+            scanner_aob_scan(
+                self.handle,
+                pattern.as_ptr(),
+                c_mask.as_ptr(),
+                start_address,
+                scan_size,
+            )
+        };
+        if addr != 0 {
+            Some(addr)
+        } else {
+            None
         }
     }
 }

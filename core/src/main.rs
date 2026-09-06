@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 mod config;
 mod discord;
 mod process_tracker;
@@ -137,12 +139,52 @@ impl XGameStats {
     fn read_game_value(&self, game_config: &GameConfig, pointer: &config::PointerConfig) -> String {
         let scanner = Scanner::open(&game_config.process_name);
         if let Some(scanner) = scanner {
-            let base_offset = parse_base_offset(&pointer.base);
-            let offsets = pointer.offsets.as_deref().unwrap_or(&[]);
+            let value_any = match game_config.scan_type {
+                config::ScanType::Offsets => {
+                    let base_offset = parse_base_offset(&pointer.base);
+                    let offsets = pointer.offsets.as_deref().unwrap_or(&[]);
+                    scanner.read_by_config(&game_config.process_name, base_offset, offsets, 0)
+                }
+                config::ScanType::Aob => {
+                    if let Some(aob_map) = &game_config.aob_patterns {
+                        if let Some(aob_cfg) = aob_map.get(&pointer.base) {
+                            let start = aob_cfg.scan_start.unwrap_or(0x400000) as usize;
+                            let size = aob_cfg.scan_size.unwrap_or(0x10000000);
+                            
+                            let mut pattern_bytes = Vec::new();
+                            for byte_str in aob_cfg.pattern.split_whitespace() {
+                                if byte_str == "?" || byte_str == "??" {
+                                    pattern_bytes.push(0);
+                                } else {
+                                    pattern_bytes.push(u8::from_str_radix(byte_str, 16).unwrap_or(0));
+                                }
+                            }
+                            
+                            if let Some(addr) = scanner.aob_scan(&pattern_bytes, &aob_cfg.mask, start, size) {
+                                let offsets = pointer.offsets.as_deref().unwrap_or(&[]);
+                                if offsets.is_empty() {
+                                    scanner.read_int(addr).map(|v| Box::new(v) as Box<dyn std::any::Any>)
+                                } else {
+                                    if let Some(resolved) = scanner.resolve_pointer_chain(addr, &offsets[..offsets.len()-1]) {
+                                        let final_addr = resolved + *offsets.last().unwrap_or(&0) as usize;
+                                        scanner.read_int(final_addr).map(|v| Box::new(v) as Box<dyn std::any::Any>)
+                                    } else {
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+            };
 
-            if let Some(value) =
-                scanner.read_by_config(&game_config.process_name, base_offset, offsets, 0)
-            {
+            if let Some(value) = value_any {
                 if let Some(int_val) = value.downcast_ref::<i32>() {
                     return int_val.to_string();
                 }
@@ -155,6 +197,8 @@ impl XGameStats {
                 if let Some(str_val) = value.downcast_ref::<String>() {
                     return str_val.clone();
                 }
+            } else if game_config.requires_elevation {
+                log::warn!("Could not read memory for {}. Does the engine need Administrator privileges?", game_config.process_name);
             }
         }
 
@@ -297,7 +341,7 @@ fn print_usage() {
     println!("Commands:");
     println!("  engine    Run the Discord RPC engine (default)");
     println!("  gui       Launch the control panel GUI");
-    println!("  start     Run engine + GUI together");
+    println!("  start     Launch the control panel");
     println!("  help      Show this help message");
     println!();
     println!("Examples:");
@@ -317,7 +361,9 @@ fn main() {
 
     match command {
         "engine" | "e" => {
+            std::env::set_var("RUST_LOG", "info");
             env_logger::init();
+
             let config = AppConfig::load(None).unwrap_or_else(|e| {
                 log::error!("Failed to load config: {}", e);
                 AppConfig {
@@ -334,18 +380,6 @@ fn main() {
         }
         "start" | "s" | "" => {
             launch_gui();
-
-            env_logger::init();
-            let config = AppConfig::load(None).unwrap_or_else(|e| {
-                log::error!("Failed to load config: {}", e);
-                AppConfig {
-                    scan_interval_ms: 3000,
-                    log_level: "info".to_string(),
-                    games: vec![],
-                }
-            });
-            let mut engine = XGameStats::new(config);
-            engine.run();
         }
         "help" | "h" | "--help" | "-h" => {
             print_usage();

@@ -1,0 +1,8 @@
+[
+{
+  "directory": "D:/Codding/XGS/hooks/build",
+  "command": "C:\\Users\\PC\\scoop\\apps\\mingw\\current\\bin\\cc.exe -Dhooks_EXPORTS @CMakeFiles\\hooks.dir\\includes_C.rsp -std=gnu17 -Wall -Wextra -pedantic -o CMakeFiles\\hooks.dir\\hook.c.obj -c D:\\Codding\\XGS\\hooks\\hook.c",
+  "file": "D:/Codding/XGS/hooks/hook.c",
+  "output": "CMakeFiles/hooks.dir/hook.c.obj"
+}
+]

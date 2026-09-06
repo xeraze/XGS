@@ -1,0 +1,9 @@
+CompileFlags:
+  Add:
+    - "-target"
+    - "x86_64-w64-mingw32"
+    - "-isystem"
+    - "C:/Users/PC/scoop/apps/mingw/16.2.0-rt_v14-rev1/lib/gcc/x86_64-w64-mingw32/16.2.0/include"
+    - "-isystem"
+    - "C:/Users/PC/scoop/apps/mingw/16.2.0-rt_v14-rev1/x86_64-w64-mingw32/include"
+  Compiler: C:/Users/PC/scoop/apps/mingw/current/bin/cc.exe
