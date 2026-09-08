@@ -1,0 +1,22 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "mingw",
+            "displayName": "MinGW",
+            "generator": "MinGW Makefiles",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_MAKE_PROGRAM": "C:/Users/PC/scoop/apps/mingw/current/bin/mingw32-make.exe",
+                "CMAKE_C_COMPILER": "C:/Users/PC/scoop/apps/mingw/current/bin/gcc.exe",
+                "CMAKE_CXX_COMPILER": "C:/Users/PC/scoop/apps/mingw/current/bin/g++.exe"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "debug",
+            "configurePreset": "mingw"
+        }
+    ]
+}

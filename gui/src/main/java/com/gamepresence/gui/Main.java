@@ -1,20 +1,5 @@
 package com.gamepresence.gui;
 
-import javafx.application.Application;
-import javafx.application.Platform;
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
-import javafx.scene.Scene;
-import javafx.scene.control.*;
-import javafx.scene.layout.*;
-import javafx.scene.paint.Color;
-import javafx.scene.text.Font;
-import javafx.scene.text.FontWeight;
-import javafx.scene.text.Text;
-import javafx.stage.Screen;
-import javafx.stage.Stage;
-import javafx.stage.StageStyle;
-
 import java.awt.AWTException;
 import java.awt.BasicStroke;
 import java.awt.FontMetrics;
@@ -27,13 +12,44 @@ import java.awt.TrayIcon;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
-import java.io.*;
-import java.nio.file.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.file.Files;
+
+import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
+import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
+import javafx.scene.image.Image;
+import javafx.scene.layout.Background;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import javafx.scene.text.Font;
+import javafx.scene.text.FontWeight;
+import javafx.scene.text.Text;
+import javafx.stage.Screen;
+import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 
 public class Main extends Application {
 
     private static final String APP_NAME    = "XGameStats";
-    private static final String APP_VERSION = "0.1.0";
+    private static final String APP_VERSION = "0.4.0";
     private static final String CONFIG_DIR  = System.getProperty("user.home")
             + File.separator + "AppData" + File.separator + "Local"
             + File.separator + "XGameStats";
@@ -52,16 +68,28 @@ public class Main extends Application {
     private HBox             tabBar;
 
     private TrayIcon trayIcon;
-    private Stage    primaryStage;
 
     private double dragOffsetX, dragOffsetY;
 
+    public Main() {}
+
     @Override
     public void start(Stage stage) {
-        this.primaryStage = stage;
+        loadIcon(stage);
         Platform.setImplicitExit(false);
         installTray(stage);
         showSplash(stage);
+    }
+
+    private void loadIcon(Stage stage) {
+        String[] paths = {"assets/logo.png", "../assets/logo.png", "../../assets/logo.png"};
+        for (String p : paths) {
+            File f = new File(p);
+            if (f.exists()) {
+                stage.getIcons().add(new Image(f.toURI().toString()));
+                return;
+            }
+        }
     }
 
     private void showSplash(Stage stage) {
@@ -145,14 +173,6 @@ public class Main extends Application {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button btnStart = coloredBtn("Start", GREEN);
-        btnStart.setOnAction(e -> startEngine());
-        btnStart.setFocusTraversable(false);
-
-        Button btnStop = coloredBtn("Stop", RED);
-        btnStop.setOnAction(e -> stopEngine());
-        btnStop.setFocusTraversable(false);
-
         Button btnMin = windowBtn("\u2212");
         btnMin.setOnAction(e -> minimizeToTray(stage));
 
@@ -163,7 +183,7 @@ public class Main extends Application {
 
         HBox btns = new HBox(8);
         btns.setAlignment(Pos.CENTER_RIGHT);
-        btns.getChildren().addAll(btnStart, btnStop, btnMin, btnClose);
+        btns.getChildren().addAll(btnMin, btnClose);
         btns.setOnMousePressed(javafx.event.Event::consume);
         btns.setOnMouseDragged(javafx.event.Event::consume);
 
@@ -324,9 +344,10 @@ public class Main extends Application {
         }
         contentPane.getChildren().clear();
         switch (idx) {
-            case 0: contentPane.getChildren().add(buildProcessTab()); break;
-            case 1: contentPane.getChildren().add(buildConfigTab()); break;
-            case 2: contentPane.getChildren().add(buildLogTab()); break;
+            case 0 -> contentPane.getChildren().add(buildProcessTab());
+            case 1 -> contentPane.getChildren().add(buildConfigTab());
+            case 2 -> contentPane.getChildren().add(buildLogTab());
+            default -> { }
         }
     }
 
@@ -335,20 +356,38 @@ public class Main extends Application {
 
         processList = new ListView<>();
         processList.setPrefHeight(320);
+        processList.getSelectionModel().setSelectionMode(javafx.scene.control.SelectionMode.SINGLE);
         processList.getItems().addAll(loadConfigs());
 
-        String cellStyle = "-fx-background-color: transparent; -fx-text-fill: #F0F0F5; -fx-font-size: 13px; -fx-padding: 8 12;";
         processList.setCellFactory(lv -> new ListCell<String>() {
             @Override protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);
                 setText(empty || item == null ? null : item);
-                setStyle(cellStyle);
+                if (empty || item == null) {
+                    setStyle("-fx-background-color: transparent; -fx-text-fill: #F0F0F5; -fx-font-size: 13px; -fx-padding: 8 12;");
+                } else if (isSelected()) {
+                    setStyle("-fx-background-color: #1E2A3A; -fx-text-fill: #F0F0F5; -fx-font-size: 13px; -fx-padding: 8 12;");
+                } else {
+                    setStyle("-fx-background-color: transparent; -fx-text-fill: #F0F0F5; -fx-font-size: 13px; -fx-padding: 8 12;");
+                }
             }
         });
         processList.setStyle("-fx-background-color: #14141C; -fx-border-color: #2A2A38; -fx-border-radius: 8; -fx-background-radius: 8;");
+        processList.getFocusModel().focusedIndexProperty().addListener((obs, old, val) -> processList.refresh());
+        processList.getSelectionModel().selectedItemProperty().addListener((obs, old, val) -> processList.refresh());
         VBox.setVgrow(processList, Priority.ALWAYS);
 
-        HBox btns = new HBox(10);
+        HBox btns = new HBox(8);
+
+        Button start = coloredBtn("Start", GREEN);
+        start.setOnAction(e -> startEngine());
+
+        Button stop = coloredBtn("Stop", RED);
+        stop.setOnAction(e -> stopEngine());
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
         Button add = accentBtn("Add Game");
         add.setOnAction(e -> showAddDialog());
 
@@ -364,7 +403,7 @@ public class Main extends Application {
         Button ref = accentBtn("Refresh");
         ref.setOnAction(e -> { processList.getItems().clear(); processList.getItems().addAll(loadConfigs()); });
 
-        btns.getChildren().addAll(add, rem, ref);
+        btns.getChildren().addAll(start, stop, spacer, add, rem, ref);
         p.getChildren().addAll(processList, btns);
         return p;
     }
@@ -390,13 +429,13 @@ public class Main extends Application {
 
             Button save = accentBtn("Save");
             save.setOnAction(e -> {
-                try { Files.write(f.toPath(), ed.getText().getBytes()); } catch (Exception ex) { }
+                try { Files.write(f.toPath(), ed.getText().getBytes()); } catch (IOException | RuntimeException ex) { }
             });
 
             Label name = new Label(sel + ".json");
             name.setFont(Font.font("Segoe UI", FontWeight.BOLD, 13));
             p.getChildren().addAll(name, ed, save);
-        } catch (Exception e) {
+        } catch (IOException | RuntimeException e) {
             p.getChildren().add(new Label("Error"));
         }
         return p;
@@ -454,8 +493,8 @@ public class Main extends Application {
         title.setFont(Font.font("Segoe UI", FontWeight.BOLD, 16));
         title.setFill(TEXT);
 
-        TextField pf = makeField("SFHR.exe");
-        TextField af = makeField("1404735389603860503");
+        TextField pf = makeField("App.exe");
+        TextField af = makeField("1234567890");
 
         Text err = new Text("");
         err.setFill(RED);
@@ -520,7 +559,7 @@ public class Main extends Application {
             statusLabel.setText("Running");
             statusLabel.setTextFill(GREEN);
             log("Engine started");
-        } catch (Exception e) {
+        } catch (IOException | RuntimeException e) {
             log("Error: " + e.getMessage());
         }
     }
@@ -561,7 +600,7 @@ public class Main extends Application {
                 + "\",\"scan_type\":\"offsets\",\"requires_elevation\":false,\"pointers\":{},\"rpc_template\":{\"details\":\"Playing\",\"state\":\"In Game\"}}";
             Files.write(new File(CONFIG_DIR, process.replace(".exe", "").toLowerCase() + ".json").toPath(), json.getBytes());
             log("Added: " + process);
-        } catch (Exception e) { log("Error: " + e.getMessage()); }
+        } catch (IOException | RuntimeException e) { log("Error: " + e.getMessage()); }
     }
 
     private void centerOnScreen(Stage s) {

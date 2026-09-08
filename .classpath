@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+    <classpathentry kind="src" path="gui/src/main/java"/>
+    <classpathentry kind="lib" path="gui/javafx-sdk/lib/javafx.base.jar">
+        <attributes>
+            <attribute name="module" value="true"/>
+            <attribute name="javadoc_location" value=""/>
+        </attributes>
+    </classpathentry>
+    <classpathentry kind="lib" path="gui/javafx-sdk/lib/javafx.controls.jar">
+        <attributes>
+            <attribute name="module" value="true"/>
+        </attributes>
+    </classpathentry>
+    <classpathentry kind="lib" path="gui/javafx-sdk/lib/javafx.fxml.jar">
+        <attributes>
+            <attribute name="module" value="true"/>
+        </attributes>
+    </classpathentry>
+    <classpathentry kind="lib" path="gui/javafx-sdk/lib/javafx.graphics.jar">
+        <attributes>
+            <attribute name="module" value="true"/>
+        </attributes>
+    </classpathentry>
+    <classpathentry kind="lib" path="gui/javafx-sdk/lib/javafx.media.jar">
+        <attributes>
+            <attribute name="module" value="true"/>
+        </attributes>
+    </classpathentry>
+    <classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-21">
+        <attributes>
+            <attribute name="module" value="true"/>
+        </attributes>
+    </classpathentry>
+    <classpathentry kind="output" path="gui/build/classes"/>
+</classpath>

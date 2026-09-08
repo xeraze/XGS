@@ -1,4 +1,8 @@
 #![windows_subsystem = "windows"]
+// Проект постепенно мигрирует от Rust-ядра к JavaFX-GUI (см. core/src/main.rs).
+// Функции-заглушки для будущих фич: глушим ворнинги dead_code,
+// чтобы Problems в VS Code не показывал несогласованные предупреждения.
+#![allow(dead_code)]
 
 mod config;
 mod discord;

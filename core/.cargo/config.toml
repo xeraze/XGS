@@ -1,0 +1,9 @@
+[build]
+# Проект собирается только GNU-тулчейном (см. README):
+# - mingw gcc в PATH, линтер GNU (нет MSVC link.exe)
+# - build.rs вызывает cmake с генератором "MinGW Makefiles"
+target = "x86_64-pc-windows-gnu"
+
+[target.x86_64-pc-windows-gnu]
+linker = "gcc.exe"
+ar = "ar.exe"
