@@ -1,28 +1,15 @@
 @echo off
 chcp 65001 >nul
 title XGameStats
-color 0B
-mode con: cols=62 lines=26
+mode con: cols=50 lines=24
 cls
 echo.
-echo                  ██╗  ██╗ ██████╗ ███████╗
-echo                  ╚██╗██╔╝██╔════╝ ██╔════╝
-echo                   ╚███╔╝ ██║  ███╗███████╗
-echo                   ██╔██╗ ██║   ██║╚════██║
-echo                  ██╔╝ ██╗╚██████╔╝███████║
-echo                  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
+echo   XGameStats v0.5.0
+echo   Discord Rich Presence Engine
 echo.
-echo          ╔════════════════════════════════════════╗
-echo          ║                 v0.1.0                 ║
-echo          ╚════════════════════════════════════════╝
-echo.
-echo          ╔════════════════════════════════════════╗
-echo          ║                                        ║
-echo          ║  1)  Start XGameStats                  ║
-echo          ║  2)  Engine only                       ║
-echo          ║  3)  Exit                              ║
-echo          ║                                        ║
-echo          ╚════════════════════════════════════════╝
+echo   1)  Start XGameStats
+echo   2)  Engine only
+echo   3)  Exit
 echo.
 
 set /p choice="   > "

@@ -141,7 +141,19 @@ impl DiscordIpc {
             "nonce": "1"
         });
 
-        self.send_message(1, payload.to_string())
+        match self.send_message(1, payload.to_string()) {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                self.connected = false;
+                if self.pipe_handle != 0 as HANDLE && self.pipe_handle != INVALID_HANDLE_VALUE {
+                    unsafe { CloseHandle(self.pipe_handle); }
+                    self.pipe_handle = 0 as HANDLE;
+                }
+                self.connect().map_err(|e| e)?;
+                self.send_handshake().map_err(|e| e)?;
+                self.send_message(1, payload.to_string())
+            }
+        }
     }
 
     pub fn clear_activity(&mut self) -> Result<(), String> {

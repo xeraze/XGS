@@ -58,6 +58,10 @@ pub struct AppSettings {
     pub scan_interval_ms: u64,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[serde(default = "default_discord_app_id")]
+    pub discord_app_id: String,
+    #[serde(default = "default_language")]
+    pub language: String,
 }
 
 impl Default for AppSettings {
@@ -65,6 +69,8 @@ impl Default for AppSettings {
         AppSettings {
             scan_interval_ms: default_scan_interval(),
             log_level: default_log_level(),
+            discord_app_id: default_discord_app_id(),
+            language: default_language(),
         }
     }
 }
@@ -75,12 +81,18 @@ pub struct AppConfig {
     pub scan_interval_ms: u64,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[serde(default = "default_discord_app_id")]
+    pub discord_app_id: String,
+    #[serde(default = "default_language")]
+    pub language: String,
     #[serde(default)]
     pub games: Vec<GameConfig>,
 }
 
 fn default_scan_interval() -> u64 { 3000 }
 fn default_log_level() -> String { "info".to_string() }
+fn default_discord_app_id() -> String { String::new() }
+fn default_language() -> String { "en".to_string() }
 
 pub fn xgs_data_dir() -> PathBuf {
     dirs::data_local_dir()
@@ -129,6 +141,8 @@ impl AppConfig {
         Ok(AppConfig {
             scan_interval_ms: settings.scan_interval_ms,
             log_level: settings.log_level,
+            discord_app_id: settings.discord_app_id,
+            language: settings.language,
             games,
         })
     }

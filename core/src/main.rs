@@ -1,13 +1,11 @@
 #![windows_subsystem = "windows"]
-// Проект постепенно мигрирует от Rust-ядра к JavaFX-GUI (см. core/src/main.rs).
-// Функции-заглушки для будущих фич: глушим ворнинги dead_code,
-// чтобы Problems в VS Code не показывал несогласованные предупреждения.
 #![allow(dead_code)]
 
 mod config;
 mod discord;
 mod process_tracker;
 mod scanner_bridge;
+mod updater;
 
 use std::collections::HashMap;
 use std::process::Command;
@@ -42,9 +40,12 @@ impl XGameStats {
     }
 
     fn run(&mut self) {
-        log::info!("XGameStats Engine v0.1.0 started");
-        log::info!("Tracking {} game(s)", self.config.games.len());
-        log::info!("Scan interval: {}ms", self.config.scan_interval_ms);
+        log::info!("[XGS] Starting engine...");
+        log::info!("[XGS] Tracking {} game(s)", self.config.games.len());
+        log::info!("[XGS] Scan interval: {}ms", self.config.scan_interval_ms);
+        log::info!("[XGS] Loading configs...");
+        log::info!("[XGS] Scanning for processes...");
+        log::info!("[XGS] Running");
 
         loop {
             if let Some(process) = self.tracker.scan() {
@@ -60,9 +61,19 @@ impl XGameStats {
     }
 
     fn update_presence(&mut self, game_config: &GameConfig) {
-        let app_id = game_config.discord_app_id.clone();
+        let app_id = if game_config.discord_app_id.is_empty() {
+            self.config.discord_app_id.clone()
+        } else {
+            game_config.discord_app_id.clone()
+        };
+
+        if app_id.is_empty() {
+            log::warn!("No Discord App ID configured for {}", game_config.process_name);
+            return;
+        }
 
         if !self.discord_connections.contains_key(&app_id) {
+            log::info!("[XGS] Connecting to Discord (app_id: {})...", app_id);
             let mut ipc = DiscordIpc::new(&app_id);
             if let Err(e) = ipc.connect() {
                 log::error!(
@@ -81,7 +92,7 @@ impl XGameStats {
                 return;
             }
             self.discord_connections.insert(app_id.clone(), ipc);
-            log::info!("Connected to Discord for app_id: {}", app_id);
+            log::info!("[XGS] Connected to Discord for {}", game_config.process_name);
         }
 
         let details = self.render_template(&game_config.rpc_template.details, game_config);
@@ -152,9 +163,9 @@ impl XGameStats {
                 config::ScanType::Aob => {
                     if let Some(aob_map) = &game_config.aob_patterns {
                         if let Some(aob_cfg) = aob_map.get(&pointer.base) {
-                            let start = aob_cfg.scan_start.unwrap_or(0x400000) as usize;
-                            let size = aob_cfg.scan_size.unwrap_or(0x10000000);
-                            
+                            let start = aob_cfg.scan_start.unwrap_or(4194304) as usize;
+                            let size = aob_cfg.scan_size.unwrap_or(536870912);
+
                             let mut pattern_bytes = Vec::new();
                             for byte_str in aob_cfg.pattern.split_whitespace() {
                                 if byte_str == "?" || byte_str == "??" {
@@ -163,7 +174,7 @@ impl XGameStats {
                                     pattern_bytes.push(u8::from_str_radix(byte_str, 16).unwrap_or(0));
                                 }
                             }
-                            
+
                             if let Some(addr) = scanner.aob_scan(&pattern_bytes, &aob_cfg.mask, start, size) {
                                 let offsets = pointer.offsets.as_deref().unwrap_or(&[]);
                                 if offsets.is_empty() {
@@ -221,6 +232,8 @@ fn parse_base_offset(base: &str) -> usize {
         0
     }
 }
+
+const VERSION_URL: &str = "https://raw.githubusercontent.com/user/XGameStats/main/version.json";
 
 fn find_exe_dir() -> std::path::PathBuf {
     std::env::current_exe()
@@ -338,20 +351,15 @@ fn launch_gui() {
 }
 
 fn print_usage() {
-    println!("XGameStats v0.1.0 - Discord Rich Presence Engine");
+    println!("XGameStats v0.5.0 - Discord Rich Presence Engine");
     println!();
     println!("Usage: xgs.exe <command>");
     println!();
     println!("Commands:");
-    println!("  engine    Run the Discord RPC engine (default)");
-    println!("  gui       Launch the control panel GUI");
     println!("  start     Launch the control panel");
+    println!("  engine    Run the Discord RPC engine");
+    println!("  version   Show current version");
     println!("  help      Show this help message");
-    println!();
-    println!("Examples:");
-    println!("  xgs.exe engine    Start scanning processes");
-    println!("  xgs.exe gui       Open the settings panel");
-    println!("  xgs.exe start     Start everything");
 }
 
 fn main() {
@@ -373,6 +381,8 @@ fn main() {
                 AppConfig {
                     scan_interval_ms: 3000,
                     log_level: "info".to_string(),
+                    discord_app_id: String::new(),
+                    language: "en".to_string(),
                     games: vec![],
                 }
             });
@@ -380,10 +390,17 @@ fn main() {
             engine.run();
         }
         "gui" | "g" => {
+            let app_dir = find_exe_dir();
+            updater::check_and_update(&app_dir, VERSION_URL);
             launch_gui();
         }
         "start" | "s" | "" => {
+            let app_dir = find_exe_dir();
+            updater::check_and_update(&app_dir, VERSION_URL);
             launch_gui();
+        }
+        "version" | "v" => {
+            println!("XGameStats v{}", updater::current_version());
         }
         "help" | "h" | "--help" | "-h" => {
             print_usage();

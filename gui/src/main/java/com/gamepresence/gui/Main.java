@@ -16,14 +16,19 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.HashMap;
+import java.util.Map;
 
+import javafx.animation.FadeTransition;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.ChoiceBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
@@ -42,43 +47,146 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
+import javafx.stage.Modality;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
+import javafx.util.Duration;
 
 public class Main extends Application {
 
     private static final String APP_NAME    = "XGameStats";
-    private static final String APP_VERSION = "0.4.0";
+    private static final String APP_VERSION = "0.5.0";
     private static final String CONFIG_DIR  = System.getProperty("user.home")
             + File.separator + "AppData" + File.separator + "Local"
             + File.separator + "XGameStats";
 
-    private static final Color ACCENT = Color.rgb(99, 179, 237);
-    private static final Color TEXT   = Color.rgb(240, 240, 245);
-    private static final Color DIM    = Color.rgb(120, 120, 135);
-    private static final Color GREEN  = Color.rgb(72,  199, 142);
-    private static final Color RED    = Color.rgb(239, 68,  68);
+    private static final Color ACCENT   = Color.rgb(88, 166, 255);
+    private static final Color TEXT     = Color.rgb(220, 220, 230);
+    private static final Color DIM      = Color.rgb(130, 130, 145);
+    private static final Color GREEN    = Color.rgb(66, 185, 130);
+    private static final Color RED      = Color.rgb(235, 80, 80);
 
+    private Stage primaryStage;
     private Process          engineProcess;
     private ListView<String> processList;
     private TextArea         logArea;
     private Label            statusLabel;
     private StackPane        contentPane;
     private HBox             tabBar;
+    private Text             subtitleText;
 
     private TrayIcon trayIcon;
-
     private double dragOffsetX, dragOffsetY;
+
+    private String language = "en";
+    private final Map<String, Map<String, String>> translations = new HashMap<>();
+    private String globalAppId = "";
 
     public Main() {}
 
     @Override
     public void start(Stage stage) {
+        primaryStage = stage;
+        loadSettings();
+        loadTranslations();
         loadIcon(stage);
         Platform.setImplicitExit(false);
         installTray(stage);
         showSplash(stage);
+    }
+
+    private void loadSettings() {
+        File f = new File(CONFIG_DIR, "settings.json");
+        if (!f.exists()) return;
+        try {
+            String raw = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+            String lid = extractJsonString(raw, "language");
+            String aid = extractJsonString(raw, "discord_app_id");
+            if (lid != null && !lid.isEmpty()) language = lid;
+            if (aid != null) globalAppId = aid;
+        } catch (IOException e) { }
+    }
+
+    private void saveSettings() {
+        try {
+            new File(CONFIG_DIR).mkdirs();
+            String json = "{\"discord_app_id\":\"" + esc(globalAppId)
+                + "\",\"language\":\"" + esc(language) + "\"}";
+            Files.write(new File(CONFIG_DIR, "settings.json").toPath(), json.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) { }
+    }
+
+    private void loadTranslations() {
+        String[] paths = {"translations.json", "../translations.json", "../../translations.json"};
+        for (String p : paths) {
+            File f = new File(p);
+            if (f.exists()) {
+                try {
+                    String raw = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+                    parseTranslations(raw);
+                    return;
+                } catch (IOException e) { }
+            }
+        }
+    }
+
+    private void parseTranslations(String json) {
+        String[] langs = {"en", "ru"};
+        for (String lang : langs) {
+            int start = json.indexOf("\"" + lang + "\"");
+            if (start < 0) continue;
+            int objStart = json.indexOf('{', start);
+            if (objStart < 0) continue;
+            int depth = 0; int objEnd = objStart;
+            for (int i = objStart; i < json.length(); i++) {
+                char c = json.charAt(i);
+                if (c == '{') depth++;
+                else if (c == '}') { depth--; if (depth == 0) { objEnd = i; break; } }
+            }
+            String block = json.substring(objStart, objEnd + 1);
+            Map<String, String> map = new HashMap<>();
+            int p = 0;
+            while (p < block.length()) {
+                int kq = block.indexOf('"', p);
+                if (kq < 0) break;
+                int kq2 = block.indexOf('"', kq + 1);
+                if (kq2 < 0) break;
+                String key = block.substring(kq + 1, kq2);
+                int vq = block.indexOf('"', kq2 + 1);
+                if (vq < 0) break;
+                int vq2 = block.indexOf('"', vq + 1);
+                if (vq2 < 0) break;
+                String val = block.substring(vq + 1, vq2);
+                map.put(key, val);
+                p = vq2 + 1;
+            }
+            translations.put(lang, map);
+        }
+    }
+
+    private String t(String key) {
+        Map<String, String> m = translations.get(language);
+        if (m != null && m.containsKey(key)) return m.get(key);
+        Map<String, String> en = translations.get("en");
+        if (en != null && en.containsKey(key)) return en.get(key);
+        return key;
+    }
+
+    private String esc(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private String extractJsonString(String json, String key) {
+        String search = "\"" + key + "\"";
+        int idx = json.indexOf(search);
+        if (idx < 0) return null;
+        int q1 = json.indexOf('"', idx + search.length());
+        if (q1 < 0) return null;
+        int q2 = json.indexOf('"', q1 + 1);
+        if (q2 < 0) return null;
+        return json.substring(q1 + 1, q2);
     }
 
     private void loadIcon(Stage stage) {
@@ -94,7 +202,7 @@ public class Main extends Application {
 
     private void showSplash(Stage stage) {
         StackPane root = new StackPane();
-        root.setStyle("-fx-background-color: #0C0C12;");
+        root.setStyle("-fx-background-color: #0E0E14;");
 
         VBox box = new VBox(20);
         box.setAlignment(Pos.CENTER);
@@ -108,7 +216,7 @@ public class Main extends Application {
         v.setFill(DIM);
 
         ProgressIndicator sp = new ProgressIndicator();
-        sp.setStyle("-fx-progress-color: #63B3ED;");
+        sp.setStyle("-fx-progress-color: #58A6FF;");
         sp.setMaxSize(40, 40);
 
         box.getChildren().addAll(t, v, sp);
@@ -120,6 +228,11 @@ public class Main extends Application {
         stage.show();
         centerOnScreen(stage);
 
+        FadeTransition fadeIn = new FadeTransition(Duration.millis(400), root);
+        fadeIn.setFromValue(0.0);
+        fadeIn.setToValue(1.0);
+        fadeIn.play();
+
         new Thread(() -> {
             try { Thread.sleep(1800); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             Platform.runLater(() -> { stage.close(); showMain(stage); });
@@ -128,17 +241,22 @@ public class Main extends Application {
 
     private void showMain(Stage stage) {
         BorderPane root = new BorderPane();
-        root.setStyle("-fx-background-color: #0C0C12;");
+        root.setStyle("-fx-background-color: #0E0E14;");
 
         HBox header = createHeader(stage);
         root.setTop(header);
         root.setCenter(createContent());
         root.setBottom(createStatusBar());
 
-        Scene s = new Scene(root, 800, 550);
+        Scene s = new Scene(root, 820, 560);
         stage.setScene(s);
         stage.show();
         centerOnScreen(stage);
+
+        FadeTransition fadeIn = new FadeTransition(Duration.millis(300), root);
+        fadeIn.setFromValue(0.0);
+        fadeIn.setToValue(1.0);
+        fadeIn.play();
 
         header.setOnMousePressed(e -> {
             dragOffsetX = e.getScreenX() - stage.getX();
@@ -159,16 +277,16 @@ public class Main extends Application {
         HBox h = new HBox();
         h.setAlignment(Pos.CENTER_LEFT);
         h.setPadding(new Insets(12, 24, 12, 24));
-        h.setStyle("-fx-background-color: #101016;");
+        h.setStyle("-fx-background-color: #111118;");
 
         VBox tb = new VBox(2);
         Text t = new Text(APP_NAME);
         t.setFont(Font.font("Segoe UI", FontWeight.BOLD, 20));
         t.setFill(ACCENT);
-        Text sub = new Text("Turn any singleplayer game into Discord Rich Presence");
-        sub.setFont(Font.font("Segoe UI", 11));
-        sub.setFill(DIM);
-        tb.getChildren().addAll(t, sub);
+        subtitleText = new Text(t("subtitle"));
+        subtitleText.setFont(Font.font("Segoe UI", 11));
+        subtitleText.setFill(DIM);
+        tb.getChildren().addAll(t, subtitleText);
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -197,16 +315,16 @@ public class Main extends Application {
 
         PopupMenu menu = new PopupMenu();
 
-        MenuItem itemShow  = new MenuItem("\u041e\u0442\u043a\u0440\u044b\u0442\u044c XGameStats");
+        MenuItem itemShow  = new MenuItem(t("tray_show"));
         itemShow.addActionListener(e -> Platform.runLater(() -> showFromTray(stage)));
 
-        MenuItem itemStart = new MenuItem("\u0417\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u0434\u0432\u0438\u0436\u043e\u043a");
+        MenuItem itemStart = new MenuItem(t("tray_start"));
         itemStart.addActionListener(e -> Platform.runLater(this::startEngine));
 
-        MenuItem itemStop  = new MenuItem("\u041e\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u0434\u0432\u0438\u0436\u043e\u043a");
+        MenuItem itemStop  = new MenuItem(t("tray_stop"));
         itemStop.addActionListener(e -> Platform.runLater(this::stopEngine));
 
-        MenuItem itemExit  = new MenuItem("\u0412\u044b\u0439\u0442\u0438");
+        MenuItem itemExit  = new MenuItem(t("tray_exit"));
         itemExit.addActionListener(e -> Platform.runLater(this::exitApp));
 
         menu.add(itemShow);
@@ -216,7 +334,8 @@ public class Main extends Application {
         menu.addSeparator();
         menu.add(itemExit);
 
-        trayIcon = new TrayIcon(buildTrayImage(), APP_NAME + " v" + APP_VERSION, menu);
+        java.awt.Image trayImage = loadTrayImage();
+        trayIcon = new TrayIcon(trayImage, APP_NAME, menu);
         trayIcon.setImageAutoSize(true);
         trayIcon.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) {
@@ -224,16 +343,35 @@ public class Main extends Application {
             }
         });
 
-        try { tray.add(trayIcon); } catch (AWTException ex) {
-            System.err.println("[XGS] Tray init failed: " + ex.getMessage());
+        try { tray.add(trayIcon); } catch (AWTException ex) { }
+    }
+
+    private java.awt.Image loadTrayImage() {
+        String[] paths = {"assets/logo.png", "../assets/logo.png", "../../assets/logo.png"};
+        for (String p : paths) {
+            File f = new File(p);
+            if (f.exists()) {
+                try {
+                    java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(f);
+                    if (img != null) {
+                        java.awt.image.BufferedImage resized = new java.awt.image.BufferedImage(64, 64, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                        java.awt.Graphics2D g = resized.createGraphics();
+                        g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                        g.drawImage(img, 0, 0, 64, 64, null);
+                        g.dispose();
+                        return resized;
+                    }
+                } catch (IOException | IllegalArgumentException e) { }
+            }
         }
+        return buildTrayImage();
     }
 
     private void minimizeToTray(Stage stage) {
         stage.hide();
         if (trayIcon != null) {
             trayIcon.displayMessage(APP_NAME,
-                "\u0421\u0432\u0451\u0440\u043d\u0443\u0442\u043e \u0432 \u0442\u0440\u0435\u0439. \u0414\u0432\u043e\u0439\u043d\u043e\u0439 \u043a\u043b\u0438\u043a — \u043e\u0442\u043a\u0440\u044b\u0442\u044c.",
+                t("tray_minimized"),
                 TrayIcon.MessageType.INFO);
         }
     }
@@ -255,12 +393,12 @@ public class Main extends Application {
         BufferedImage img = new BufferedImage(sz, sz, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setColor(new java.awt.Color(12, 12, 24));
+        g.setColor(new java.awt.Color(14, 14, 20));
         g.fillOval(2, 2, sz - 4, sz - 4);
-        g.setColor(new java.awt.Color(99, 179, 237));
+        g.setColor(new java.awt.Color(88, 166, 255));
         g.setStroke(new BasicStroke(3f));
         g.drawOval(4, 4, sz - 8, sz - 8);
-        g.setColor(new java.awt.Color(240, 240, 245));
+        g.setColor(new java.awt.Color(220, 220, 230));
         g.setFont(new java.awt.Font("Segoe UI", java.awt.Font.BOLD, 34));
         FontMetrics fm = g.getFontMetrics();
         String ltr = "X";
@@ -287,7 +425,7 @@ public class Main extends Application {
         b.setFont(Font.font("Segoe UI", FontWeight.BOLD, 12));
         b.setTextFill(Color.WHITE);
         b.setStyle(colorStyle(color, 1.0));
-        b.setOnMouseEntered(e -> b.setStyle(colorStyle(color, 1.1)));
+        b.setOnMouseEntered(e -> b.setStyle(colorStyle(color, 1.15)));
         b.setOnMouseExited(e  -> b.setStyle(colorStyle(color, 1.0)));
         return b;
     }
@@ -304,27 +442,27 @@ public class Main extends Application {
         Button b = new Button(text);
         b.setFont(Font.font("Segoe UI", 12));
         b.setTextFill(TEXT);
-        b.setStyle("-fx-background-color: #2D2D37; -fx-background-radius: 6; -fx-cursor: hand; -fx-padding: 8 18;");
-        b.setOnMouseEntered(e -> b.setStyle("-fx-background-color: rgba(99,179,237,0.3); -fx-background-radius: 6; -fx-cursor: hand; -fx-padding: 8 18;"));
-        b.setOnMouseExited(e -> b.setStyle("-fx-background-color: #2D2D37; -fx-background-radius: 6; -fx-cursor: hand; -fx-padding: 8 18;"));
+        b.setStyle("-fx-background-color: #1E1E2A; -fx-background-radius: 6; -fx-cursor: hand; -fx-padding: 8 18;");
+        b.setOnMouseEntered(e -> b.setStyle("-fx-background-color: rgba(88,166,255,0.2); -fx-background-radius: 6; -fx-cursor: hand; -fx-padding: 8 18;"));
+        b.setOnMouseExited(e -> b.setStyle("-fx-background-color: #1E1E2A; -fx-background-radius: 6; -fx-cursor: hand; -fx-padding: 8 18;"));
         return b;
     }
 
     private VBox createContent() {
         VBox v = new VBox();
         v.setPadding(new Insets(16, 20, 16, 20));
-        v.setStyle("-fx-background-color: #0E0E14; -fx-background-radius: 12;");
+        v.setStyle("-fx-background-color: #121218; -fx-background-radius: 12;");
 
         tabBar = new HBox(0);
         tabBar.setPadding(new Insets(0, 0, 12, 0));
 
-        String[] tabs = {"Processes", "Configs", "Logs"};
+        String[] tabs = {t("tab_processes"), t("tab_configs"), t("tab_logs"), t("tab_settings")};
         for (int i = 0; i < tabs.length; i++) {
             final int idx = i;
             Label lbl = new Label(tabs[i]);
             lbl.setFont(Font.font("Segoe UI", 12));
             lbl.setPadding(new Insets(8, 16, 8, 16));
-            lbl.setStyle(i == 0 ? "-fx-text-fill: #F0F0F5;" : "-fx-text-fill: #787887; -fx-cursor: hand;");
+            lbl.setStyle(i == 0 ? "-fx-text-fill: #DCDCE6;" : "-fx-text-fill: #828291; -fx-cursor: hand;");
             lbl.setOnMouseClicked(e -> switchTab(idx));
             tabBar.getChildren().add(lbl);
         }
@@ -340,15 +478,25 @@ public class Main extends Application {
     private void switchTab(int idx) {
         for (int i = 0; i < tabBar.getChildren().size(); i++) {
             Label l = (Label) tabBar.getChildren().get(i);
-            l.setStyle(i == idx ? "-fx-text-fill: #F0F0F5;" : "-fx-text-fill: #787887; -fx-cursor: hand;");
+            l.setStyle(i == idx ? "-fx-text-fill: #DCDCE6;" : "-fx-text-fill: #828291; -fx-cursor: hand;");
         }
-        contentPane.getChildren().clear();
+
+        javafx.scene.Node newContent;
         switch (idx) {
-            case 0 -> contentPane.getChildren().add(buildProcessTab());
-            case 1 -> contentPane.getChildren().add(buildConfigTab());
-            case 2 -> contentPane.getChildren().add(buildLogTab());
-            default -> { }
+            case 0 -> newContent = buildProcessTab();
+            case 1 -> newContent = buildConfigTab();
+            case 2 -> newContent = buildLogTab();
+            case 3 -> newContent = buildSettingsTab();
+            default -> newContent = buildProcessTab();
         }
+
+        contentPane.getChildren().clear();
+        contentPane.getChildren().add(newContent);
+
+        FadeTransition ft = new FadeTransition(Duration.millis(150), newContent);
+        ft.setFromValue(0.0);
+        ft.setToValue(1.0);
+        ft.play();
     }
 
     private VBox buildProcessTab() {
@@ -364,43 +512,44 @@ public class Main extends Application {
                 super.updateItem(item, empty);
                 setText(empty || item == null ? null : item);
                 if (empty || item == null) {
-                    setStyle("-fx-background-color: transparent; -fx-text-fill: #F0F0F5; -fx-font-size: 13px; -fx-padding: 8 12;");
+                    setStyle("-fx-background-color: transparent; -fx-text-fill: #DCDCE6; -fx-font-size: 13px; -fx-padding: 8 12;");
                 } else if (isSelected()) {
-                    setStyle("-fx-background-color: #1E2A3A; -fx-text-fill: #F0F0F5; -fx-font-size: 13px; -fx-padding: 8 12;");
+                    setStyle("-fx-background-color: #1A1A28; -fx-text-fill: #DCDCE6; -fx-font-size: 13px; -fx-padding: 8 12;");
                 } else {
-                    setStyle("-fx-background-color: transparent; -fx-text-fill: #F0F0F5; -fx-font-size: 13px; -fx-padding: 8 12;");
+                    setStyle("-fx-background-color: transparent; -fx-text-fill: #DCDCE6; -fx-font-size: 13px; -fx-padding: 8 12;");
                 }
             }
         });
-        processList.setStyle("-fx-background-color: #14141C; -fx-border-color: #2A2A38; -fx-border-radius: 8; -fx-background-radius: 8;");
+        processList.setStyle("-fx-background-color: #14141C; -fx-border-color: #222230; -fx-border-radius: 8; -fx-background-radius: 8;");
         processList.getFocusModel().focusedIndexProperty().addListener((obs, old, val) -> processList.refresh());
         processList.getSelectionModel().selectedItemProperty().addListener((obs, old, val) -> processList.refresh());
         VBox.setVgrow(processList, Priority.ALWAYS);
 
         HBox btns = new HBox(8);
 
-        Button start = coloredBtn("Start", GREEN);
+        Button start = coloredBtn(t("btn_start"), GREEN);
         start.setOnAction(e -> startEngine());
 
-        Button stop = coloredBtn("Stop", RED);
+        Button stop = coloredBtn(t("btn_stop"), RED);
         stop.setOnAction(e -> stopEngine());
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button add = accentBtn("Add Game");
+        Button add = accentBtn(t("btn_add"));
         add.setOnAction(e -> showAddDialog());
 
-        Button rem = accentBtn("Remove");
+        Button rem = accentBtn(t("btn_remove"));
         rem.setOnAction(e -> {
             String sel = processList.getSelectionModel().getSelectedItem();
             if (sel != null) {
                 new File(CONFIG_DIR, sel + ".json").delete();
                 processList.getItems().remove(sel);
+                log(t("log_removed").replace("{0}", sel));
             }
         });
 
-        Button ref = accentBtn("Refresh");
+        Button ref = accentBtn(t("btn_refresh"));
         ref.setOnAction(e -> { processList.getItems().clear(); processList.getItems().addAll(loadConfigs()); });
 
         btns.getChildren().addAll(start, stop, spacer, add, rem, ref);
@@ -411,32 +560,30 @@ public class Main extends Application {
     private VBox buildConfigTab() {
         VBox p = new VBox(10);
         if (processList == null || processList.getSelectionModel().getSelectedItem() == null) {
-            Label l = new Label("Select a process first");
+            Label l = new Label(t("select_process_first"));
             l.setTextFill(DIM);
             p.getChildren().add(l);
             return p;
         }
         String sel = processList.getSelectionModel().getSelectedItem();
         File f = new File(CONFIG_DIR, sel + ".json");
-        if (!f.exists()) { p.getChildren().add(new Label("Not found")); return p; }
+        if (!f.exists()) { p.getChildren().add(new Label(t("config_not_found"))); return p; }
         try {
-            String content = new String(Files.readAllBytes(f.toPath()));
+            String content = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
             TextArea ed = new TextArea(content);
             ed.setFont(Font.font("Consolas", 13));
-            ed.setStyle("-fx-control-inner-background: #14141C; -fx-text-fill: #F0F0F5; -fx-border-color: #2A2A38; -fx-border-radius: 8; -fx-background-radius: 8;");
+            ed.setStyle("-fx-control-inner-background: #14141C; -fx-text-fill: #DCDCE6; -fx-border-color: #222230; -fx-border-radius: 8; -fx-background-radius: 8;");
             ed.setPrefHeight(320);
             VBox.setVgrow(ed, Priority.ALWAYS);
 
-            Button save = accentBtn("Save");
-            save.setOnAction(e -> {
-                try { Files.write(f.toPath(), ed.getText().getBytes()); } catch (IOException | RuntimeException ex) { }
-            });
+            Button save = accentBtn(t("btn_save"));
+            save.setOnAction(e -> writeFile(f.toPath(), ed.getText().getBytes(StandardCharsets.UTF_8)));
 
             Label name = new Label(sel + ".json");
             name.setFont(Font.font("Segoe UI", FontWeight.BOLD, 13));
             p.getChildren().addAll(name, ed, save);
-        } catch (IOException | RuntimeException e) {
-            p.getChildren().add(new Label("Error"));
+        } catch (IOException e) {
+            p.getChildren().add(new Label(t("error")));
         }
         return p;
     }
@@ -446,14 +593,135 @@ public class Main extends Application {
         logArea = new TextArea();
         logArea.setEditable(false);
         logArea.setFont(Font.font("Consolas", 12));
-        logArea.setStyle("-fx-control-inner-background: #14141C; -fx-text-fill: #F0F0F5; -fx-border-color: #2A2A38; -fx-border-radius: 8; -fx-background-radius: 8;");
+        logArea.setStyle("-fx-control-inner-background: #14141C; -fx-text-fill: #DCDCE6; -fx-border-color: #222230; -fx-border-radius: 8; -fx-background-radius: 8;");
         logArea.setPrefHeight(320);
+        logArea.setWrapText(false);
         VBox.setVgrow(logArea, Priority.ALWAYS);
 
-        Button clr = accentBtn("Clear");
+        Button clr = accentBtn(t("btn_clear"));
         clr.setOnAction(e -> logArea.clear());
         p.getChildren().addAll(logArea, clr);
         return p;
+    }
+
+    private VBox buildSettingsTab() {
+        VBox p = new VBox(16);
+        p.setPadding(new Insets(4, 0, 0, 0));
+
+        Text title = new Text(t("settings_title"));
+        title.setFont(Font.font("Segoe UI", FontWeight.BOLD, 16));
+        title.setFill(TEXT);
+
+        Text discordLbl = new Text(t("settings_discord_id"));
+        discordLbl.setFont(Font.font("Segoe UI", 13));
+        discordLbl.setFill(TEXT);
+
+        Text discordDesc = new Text(t("settings_discord_desc"));
+        discordDesc.setFont(Font.font("Segoe UI", 11));
+        discordDesc.setFill(DIM);
+
+        TextField discordField = makeField("1234567890");
+        discordField.setText(globalAppId);
+
+        Text langLbl = new Text(t("settings_language"));
+        langLbl.setFont(Font.font("Segoe UI", 13));
+        langLbl.setFill(TEXT);
+
+        ChoiceBox<String> langBox = new ChoiceBox<>();
+        langBox.getItems().addAll("English", "\u0420\u0443\u0441\u0441\u043a\u0438\u0439");
+        langBox.setValue("en".equals(language) ? "English" : "\u0420\u0443\u0441\u0441\u043a\u0438\u0439");
+        langBox.setStyle("-fx-background-color: #14141C; -fx-border-color: #222230; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 4;");
+        langBox.lookup(".list-cell").setStyle("-fx-text-fill: #DCDCE6; -fx-background-color: transparent;");
+
+        Button apply = accentBtn(t("btn_apply"));
+        apply.setOnAction(e -> {
+            String newAppId = discordField.getText().trim();
+            String newLang = "English".equals(langBox.getValue()) ? "en" : "ru";
+
+            if (newAppId.isEmpty()) {
+                showConfirmDialog(primaryStage, t("err_enter_id"), () -> {});
+                return;
+            }
+
+            globalAppId = newAppId;
+            language = newLang;
+            saveSettings();
+            rebuildUI();
+            showConfirmDialog(primaryStage, t("settings_saved"), () -> {});
+        });
+
+        Region spacer = new Region();
+        VBox.setVgrow(spacer, Priority.ALWAYS);
+
+        p.getChildren().addAll(title, discordLbl, discordDesc, discordField, langLbl, langBox, spacer, apply);
+        return p;
+    }
+
+    private void rebuildUI() {
+        if (primaryStage == null) return;
+        Scene s = primaryStage.getScene();
+        if (s == null) return;
+        BorderPane root = (BorderPane) s.getRoot();
+        root.getChildren().clear();
+
+        HBox header = createHeader(primaryStage);
+        root.setTop(header);
+        root.setCenter(createContent());
+        root.setBottom(createStatusBar());
+
+        header.setOnMousePressed(e -> {
+            dragOffsetX = e.getScreenX() - primaryStage.getX();
+            dragOffsetY = e.getScreenY() - primaryStage.getY();
+        });
+        header.setOnMouseDragged(e -> {
+            primaryStage.setX(e.getScreenX() - dragOffsetX);
+            primaryStage.setY(e.getScreenY() - dragOffsetY);
+        });
+
+        primaryStage.setOnCloseRequest(e -> {
+            e.consume();
+            minimizeToTray(primaryStage);
+        });
+    }
+
+    private void showConfirmDialog(Stage owner, String message, Runnable onOk) {
+        Stage d = new Stage();
+        d.initStyle(StageStyle.UNDECORATED);
+        d.initModality(Modality.APPLICATION_MODAL);
+        d.initOwner(owner);
+
+        final double[] off = new double[2];
+
+        VBox root = new VBox(15);
+        root.setPadding(new Insets(25));
+        root.setStyle("-fx-background-color: #14141C; -fx-background-radius: 12; -fx-border-color: #222230; -fx-border-radius: 12;");
+        root.setOnMousePressed(e -> { off[0] = e.getScreenX() - d.getX(); off[1] = e.getScreenY() - d.getY(); });
+        root.setOnMouseDragged(e -> { d.setX(e.getScreenX() - off[0]); d.setY(e.getScreenY() - off[1]); });
+
+        Text msg = new Text(message);
+        msg.setFont(Font.font("Segoe UI", 13));
+        msg.setFill(TEXT);
+        msg.setWrappingWidth(320);
+
+        Button ok = coloredBtn("OK", ACCENT);
+        ok.setOnAction(e -> { d.close(); onOk.run(); });
+
+        HBox btns = new HBox(10);
+        btns.setAlignment(Pos.CENTER_RIGHT);
+        btns.getChildren().add(ok);
+
+        root.getChildren().addAll(msg, btns);
+
+        Scene sc = new Scene(root, 380, 160);
+        sc.setFill(Color.TRANSPARENT);
+        d.initStyle(StageStyle.TRANSPARENT);
+        d.setScene(sc);
+        d.show();
+
+        FadeTransition fadeIn = new FadeTransition(Duration.millis(200), root);
+        fadeIn.setFromValue(0.0);
+        fadeIn.setToValue(1.0);
+        fadeIn.play();
     }
 
     private HBox createStatusBar() {
@@ -462,7 +730,7 @@ public class Main extends Application {
         bar.setPadding(new Insets(10, 24, 10, 24));
         bar.setStyle("-fx-background-color: #0E0E14;");
 
-        statusLabel = new Label("Idle");
+        statusLabel = new Label(t("status_idle"));
         statusLabel.setFont(Font.font("Segoe UI", 11));
         statusLabel.setTextFill(DIM);
 
@@ -480,39 +748,46 @@ public class Main extends Application {
     private void showAddDialog() {
         Stage d = new Stage();
         d.initStyle(StageStyle.UNDECORATED);
+        if (primaryStage != null) {
+            d.initOwner(primaryStage);
+            d.initModality(Modality.APPLICATION_MODAL);
+        }
 
         final double[] off = new double[2];
 
         VBox root = new VBox(15);
         root.setPadding(new Insets(25));
-        root.setStyle("-fx-background-color: #16161E; -fx-background-radius: 12;");
+        root.setStyle("-fx-background-color: #14141C; -fx-background-radius: 12; -fx-border-color: #222230; -fx-border-radius: 12;");
         root.setOnMousePressed(e -> { off[0] = e.getScreenX() - d.getX(); off[1] = e.getScreenY() - d.getY(); });
         root.setOnMouseDragged(e -> { d.setX(e.getScreenX() - off[0]); d.setY(e.getScreenY() - off[1]); });
 
-        Text title = new Text("Add Game");
+        Text title = new Text(t("dialog_add_title"));
         title.setFont(Font.font("Segoe UI", FontWeight.BOLD, 16));
         title.setFill(TEXT);
 
-        TextField pf = makeField("App.exe");
-        TextField af = makeField("1234567890");
+        TextField pf = makeField(t("dialog_process_name"));
+        TextField af = makeField(t("dialog_discord_id"));
 
         Text err = new Text("");
         err.setFill(RED);
 
-        Button cancel = accentBtn("Cancel");
+        Button cancel = accentBtn(t("btn_cancel"));
         cancel.setOnAction(e -> d.close());
 
-        Button add = coloredBtn("Add", ACCENT);
+        Button add = coloredBtn(t("btn_add"), ACCENT);
         add.setOnAction(e -> {
             String p = pf.getText().trim();
             String a = af.getText().trim();
-            if (p.isEmpty()) { err.setText("Enter process name"); return; }
-            if (!p.toLowerCase().endsWith(".exe")) { err.setText("Must end with .exe"); return; }
-            if (a.isEmpty()) { err.setText("Enter App ID"); return; }
-            if (!a.matches("\\d{17,20}")) { err.setText("ID: 17-20 digits"); return; }
-            saveConfig(p, a);
+            if (p.isEmpty()) { err.setText(t("err_enter_process")); return; }
+            if (!p.toLowerCase().endsWith(".exe")) { err.setText(t("err_must_exe")); return; }
+            if (a.isEmpty() && globalAppId.isEmpty()) { err.setText(t("err_enter_id")); return; }
+            if (!a.isEmpty() && !a.matches("\\d{17,20}")) { err.setText(t("err_invalid_id")); return; }
+            if (!isProcessRunning(p)) { err.setText(t("err_process_not_found")); return; }
+            String appId = a.isEmpty() ? globalAppId : a;
+            saveConfig(p, appId);
             processList.getItems().clear();
             processList.getItems().addAll(loadConfigs());
+            log(t("log_added").replace("{0}", p));
             d.close();
         });
 
@@ -522,24 +797,47 @@ public class Main extends Application {
 
         root.getChildren().addAll(title, pf, af, err, btns);
 
-        Scene s = new Scene(root, 400, 260);
+        Scene s = new Scene(root, 420, 270);
+        s.setFill(Color.TRANSPARENT);
         d.setScene(s);
         d.centerOnScreen();
+
+        FadeTransition fadeIn = new FadeTransition(Duration.millis(200), root);
+        fadeIn.setFromValue(0.0);
+        fadeIn.setToValue(1.0);
+        fadeIn.play();
+
         d.show();
+    }
+
+    private boolean isProcessRunning(String processName) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder("tasklist", "/FI", "IMAGENAME eq " + processName);
+            pb.redirectErrorStream(true);
+            Process proc = pb.start();
+            try (BufferedReader r = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    if (line.toLowerCase().contains(processName.toLowerCase())) return true;
+                }
+            }
+            proc.waitFor();
+        } catch (IOException | InterruptedException e) { }
+        return false;
     }
 
     private TextField makeField(String prompt) {
         TextField f = new TextField();
         f.setPromptText(prompt);
         f.setFont(Font.font("Segoe UI", 13));
-        f.setStyle("-fx-background-color: #1E1E28; -fx-text-fill: #F0F0F5; -fx-prompt-text-fill: #787887; -fx-border-color: #2A2A38; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 10;");
+        f.setStyle("-fx-background-color: #1A1A24; -fx-text-fill: #DCDCE6; -fx-prompt-text-fill: #828291; -fx-border-color: #222230; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 10;");
         return f;
     }
 
     private void startEngine() {
         try {
             String exe = findExe();
-            if (exe == null) { log("Engine not found"); return; }
+            if (exe == null) { log("[XGS] Engine not found"); return; }
             new File(CONFIG_DIR).mkdirs();
             ProcessBuilder pb = new ProcessBuilder(exe, "engine");
             pb.directory(new File(CONFIG_DIR));
@@ -551,25 +849,45 @@ public class Main extends Application {
                     String line;
                     while ((line = r.readLine()) != null) {
                         final String l = line;
-                        Platform.runLater(() -> log(l));
+                        Platform.runLater(() -> {
+                            log(l);
+                            if (l.contains("[XGS] Starting engine")) {
+                                statusLabel.setText(t("status_starting"));
+                                statusLabel.setTextFill(Color.rgb(255, 200, 50));
+                            } else if (l.contains("[XGS] Loading configs")) {
+                                statusLabel.setText(t("status_loading"));
+                                statusLabel.setTextFill(Color.rgb(255, 200, 50));
+                            } else if (l.contains("[XGS] Scanning for processes")) {
+                                statusLabel.setText(t("status_scanning"));
+                                statusLabel.setTextFill(Color.rgb(255, 200, 50));
+                            } else if (l.contains("[XGS] Connecting to Discord")) {
+                                statusLabel.setText(t("status_connecting"));
+                                statusLabel.setTextFill(Color.rgb(180, 140, 255));
+                            } else if (l.contains("[XGS] Running")) {
+                                statusLabel.setText(t("status_running"));
+                                statusLabel.setTextFill(GREEN);
+                            }
+                        });
                     }
                 } catch (IOException e) { }
             }, "log-reader").start();
 
-            statusLabel.setText("Running");
-            statusLabel.setTextFill(GREEN);
-            log("Engine started");
-        } catch (IOException | RuntimeException e) {
-            log("Error: " + e.getMessage());
+            statusLabel.setText(t("status_starting"));
+            statusLabel.setTextFill(Color.rgb(255, 200, 50));
+            log(t("log_engine_started"));
+        } catch (IOException e) {
+            log("[XGS] Error: " + e.getMessage());
+            statusLabel.setText(t("status_error"));
+            statusLabel.setTextFill(RED);
         }
     }
 
     private void stopEngine() {
         if (engineProcess != null && engineProcess.isAlive()) {
             engineProcess.destroy();
-            statusLabel.setText("Stopped");
+            statusLabel.setText(t("status_stopped"));
             statusLabel.setTextFill(RED);
-            log("Engine stopped");
+            log(t("log_engine_stopped"));
         }
     }
 
@@ -586,7 +904,7 @@ public class Main extends Application {
     private String[] loadConfigs() {
         File dir = new File(CONFIG_DIR);
         if (!dir.exists()) return new String[0];
-        File[] files = dir.listFiles((d, n) -> n.endsWith(".json"));
+        File[] files = dir.listFiles((d, n) -> n.endsWith(".json") && !n.equals("settings.json"));
         if (files == null) return new String[0];
         String[] r = new String[files.length];
         for (int i = 0; i < files.length; i++) r[i] = files[i].getName().replace(".json", "");
@@ -596,11 +914,32 @@ public class Main extends Application {
     private void saveConfig(String process, String appId) {
         try {
             new File(CONFIG_DIR).mkdirs();
-            String json = "{\"process_name\":\"" + process + "\",\"discord_app_id\":\"" + appId
-                + "\",\"scan_type\":\"offsets\",\"requires_elevation\":false,\"pointers\":{},\"rpc_template\":{\"details\":\"Playing\",\"state\":\"In Game\"}}";
-            Files.write(new File(CONFIG_DIR, process.replace(".exe", "").toLowerCase() + ".json").toPath(), json.getBytes());
-            log("Added: " + process);
-        } catch (IOException | RuntimeException e) { log("Error: " + e.getMessage()); }
+            String json = "{\n"
+                + "  \"process_name\": \"" + esc(process) + "\",\n"
+                + "  \"discord_app_id\": \"" + esc(appId) + "\",\n"
+                + "  \"scan_type\": \"offsets\",\n"
+                + "  \"requires_elevation\": false,\n"
+                + "  \"pointers\": {\n"
+                + "    \"value\": {\n"
+                + "      \"base\": \"" + esc(process.replace(".exe", "")) + ".exe+0x0\",\n"
+                + "      \"offsets\": [0]\n"
+                + "    }\n"
+                + "  },\n"
+                + "  \"rpc_template\": {\n"
+                + "    \"details\": \"Playing " + esc(process.replace(".exe", "")) + "\",\n"
+                + "    \"state\": \"In Game\",\n"
+                + "    \"large_image\": \"game_logo\",\n"
+                + "    \"large_image_text\": \"" + esc(process.replace(".exe", "")) + "\",\n"
+                + "    \"small_image\": \"discord\",\n"
+                + "    \"small_image_text\": \"XGameStats\"\n"
+                + "  }\n"
+                + "}";
+            Files.write(new File(CONFIG_DIR, process.replace(".exe", "").toLowerCase() + ".json").toPath(), json.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) { log("[XGS] Error: " + e.getMessage()); }
+    }
+
+    private void writeFile(java.nio.file.Path path, byte[] data) {
+        try { Files.write(path, data); } catch (IOException e) { }
     }
 
     private void centerOnScreen(Stage s) {
