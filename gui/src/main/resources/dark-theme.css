@@ -1,0 +1,63 @@
+.scroll-bar {
+    -fx-background-color: #0A0A0E;
+}
+.scroll-bar .track {
+    -fx-background-color: #0A0A0E;
+}
+.scroll-bar .thumb {
+    -fx-background-color: #3A3A44;
+    -fx-background-radius: 4;
+}
+.scroll-bar .thumb:hover {
+    -fx-background-color: #4A4A54;
+}
+.scroll-bar .thumb:pressed {
+    -fx-background-color: #5A5A64;
+}
+.scroll-bar .increment-button,
+.scroll-bar .decrement-button {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+.scroll-bar .increment-arrow,
+.scroll-bar .decrement-arrow {
+    -fx-shape: "";
+    -fx-padding: 0;
+}
+.scroll-pane {
+    -fx-background-color: #0A0A0E;
+    -fx-border-color: transparent;
+}
+.scroll-pane > .viewport {
+    -fx-background-color: #0A0A0E;
+}
+.list-view {
+    -fx-background-color: #0E0E12;
+    -fx-border-color: #1C1C24;
+}
+.list-view .scroll-bar {
+    -fx-background-color: #0A0A0E;
+}
+.text-area {
+    -fx-background-color: #0E0E12;
+}
+.text-area .content {
+    -fx-background-color: #0E0E12;
+}
+.text-area .scroll-bar {
+    -fx-background-color: #0A0A0E;
+}
+.hyperlink {
+    -fx-text-fill: #58A6FF;
+    -fx-border-color: transparent;
+    -fx-padding: 0;
+}
+.hyperlink:hover {
+    -fx-text-fill: #79C0FF;
+}
+.hyperlink:visited {
+    -fx-text-fill: #58A6FF;
+}
+.hyperlink:visited:hover {
+    -fx-text-fill: #79C0FF;
+}

@@ -32,10 +32,13 @@ import javafx.scene.control.ChoiceBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.Hyperlink;
 import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.Background;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -258,6 +261,8 @@ public class Main extends Application {
         root.setBottom(createStatusBar());
 
         Scene s = new Scene(root, 820, 560);
+        String css = getClass().getResource("/dark-theme.css").toExternalForm();
+        s.getStylesheets().add(css);
         stage.setScene(s);
         stage.show();
         centerOnScreen(stage);
@@ -300,12 +305,10 @@ public class Main extends Application {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button btnMin = windowBtn("\u2212");
+        Button btnMin = windowBtn("minimize.svg");
         btnMin.setOnAction(e -> minimizeToTray(stage));
 
-        Button btnClose = windowBtn("\u00d7");
-        btnClose.setOnMouseEntered(ev -> btnClose.setTextFill(RED));
-        btnClose.setOnMouseExited(ev  -> btnClose.setTextFill(DIM));
+        Button btnClose = windowBtn("close.svg");
         btnClose.setOnAction(e -> minimizeToTray(stage));
 
         HBox btns = new HBox(8);
@@ -463,17 +466,45 @@ public class Main extends Application {
         return img;
     }
 
-    private Button windowBtn(String symbol) {
-        Button b = new Button(symbol);
-        b.setFont(Font.font("Segoe UI", FontWeight.BOLD, 14));
-        b.setTextFill(DIM);
+    private Button windowBtn(String iconName) {
+        Button b = new Button();
         b.setBackground(Background.EMPTY);
         b.setMinSize(32, 32);
         b.setMaxSize(32, 32);
         b.setFocusTraversable(false);
-        b.setOnMouseEntered(e -> b.setTextFill(TEXT));
-        b.setOnMouseExited(e  -> b.setTextFill(DIM));
+        b.setPadding(new Insets(0));
+
+        ImageView iv = new ImageView();
+        iv.setFitWidth(18);
+        iv.setFitHeight(18);
+        iv.setSmooth(true);
+        b.setGraphic(iv);
+
+        String normalPath = findAsset("icons/" + iconName + ".svg");
+        String hoverPath = findAsset("icons/" + iconName + "_hover.svg");
+
+        if (normalPath != null) {
+            iv.setImage(new Image(new File(normalPath).toURI().toString()));
+        }
+
+        if (hoverPath != null) {
+            Image hoverImg = new Image(new File(hoverPath).toURI().toString());
+            b.setOnMouseEntered(e -> iv.setImage(hoverImg));
+            b.setOnMouseExited(e -> {
+                if (normalPath != null) iv.setImage(new Image(new File(normalPath).toURI().toString()));
+            });
+        }
+
         return b;
+    }
+
+    private String findAsset(String relativePath) {
+        String[] paths = {"assets/" + relativePath, "../assets/" + relativePath, "../../assets/" + relativePath};
+        for (String p : paths) {
+            File f = new File(p);
+            if (f.exists()) return f.getAbsolutePath();
+        }
+        return null;
     }
 
     private Button coloredBtn(String text, Color color) {
@@ -736,7 +767,7 @@ public class Main extends Application {
     }
 
     private VBox buildFaqTab() {
-        VBox p = new VBox(16);
+        VBox p = new VBox(8);
         p.setPadding(new Insets(4, 0, 0, 0));
 
         Text title = new Text(t("faq_title"));
@@ -750,9 +781,9 @@ public class Main extends Application {
             {t("faq_q4"), t("faq_a4")}
         };
 
-        VBox items = new VBox(12);
+        VBox items = new VBox(10);
         for (String[] faq : faqs) {
-            VBox item = new VBox(4);
+            VBox item = new VBox(6);
             item.setPadding(new Insets(12));
             item.setStyle("-fx-background-color: #0E0E12; -fx-border-color: #1C1C24;");
 
@@ -760,20 +791,56 @@ public class Main extends Application {
             q.setFont(Font.font("Segoe UI", FontWeight.BOLD, 13));
             q.setFill(ACCENT);
 
-            Text a = new Text(faq[1]);
-            a.setFont(Font.font("Segoe UI", 12));
-            a.setFill(TEXT);
-            a.setWrappingWidth(700);
+            VBox answerBox = new VBox(4);
+            String[] lines = faq[1].split("\n");
+            for (String line : lines) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty()) continue;
+                answerBox.getChildren().addAll(parseLineWithLinks(trimmed));
+            }
 
-            item.getChildren().addAll(q, a);
+            item.getChildren().addAll(q, answerBox);
             items.getChildren().add(item);
         }
 
-        Region spacer = new Region();
-        VBox.setVgrow(spacer, Priority.ALWAYS);
+        ScrollPane scroll = new ScrollPane(items);
+        scroll.setFitToWidth(true);
+        scroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.ALWAYS);
 
-        p.getChildren().addAll(title, items, spacer);
+        p.getChildren().addAll(title, scroll);
+        VBox.setVgrow(scroll, Priority.ALWAYS);
         return p;
+    }
+
+    private java.util.List<javafx.scene.Node> parseLineWithLinks(String line) {
+        java.util.List<javafx.scene.Node> nodes = new java.util.ArrayList<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(https?://[^\\s]+)").matcher(line);
+        int lastEnd = 0;
+        while (m.find()) {
+            if (m.start() > lastEnd) {
+                Text t = new Text(line.substring(lastEnd, m.start()));
+                t.setFont(Font.font("Segoe UI", 12));
+                t.setFill(TEXT);
+                nodes.add(t);
+            }
+            String url = m.group();
+            Hyperlink link = new Hyperlink(url);
+            link.setFont(Font.font("Segoe UI", 12));
+            link.setStyle("-fx-text-fill: #58A6FF; -fx-underline: true;");
+            link.setOnAction(e -> {
+                try { java.awt.Desktop.getDesktop().browse(new java.net.URI(url)); }
+                catch (Exception ex) { }
+            });
+            nodes.add(link);
+            lastEnd = m.end();
+        }
+        if (lastEnd < line.length()) {
+            Text t = new Text(line.substring(lastEnd));
+            t.setFont(Font.font("Segoe UI", 12));
+            t.setFill(TEXT);
+            nodes.add(t);
+        }
+        return nodes;
     }
 
     private void rebuildUI() {
@@ -889,8 +956,9 @@ public class Main extends Application {
         procLbl.setFill(TEXT);
 
         ListView<String> runningList = new ListView<>();
-        runningList.setPrefHeight(180);
-        runningList.getItems().addAll(getRunningProcesses());
+        runningList.setPrefHeight(260);
+        java.util.List<String> allProcesses = getRunningProcesses();
+        runningList.getItems().addAll(allProcesses);
         runningList.setStyle("-fx-background-color: #0E0E12; -fx-border-color: #1C1C24;");
         runningList.setCellFactory(lv -> new ListCell<String>() {
             @Override protected void updateItem(String item, boolean empty) {
@@ -902,6 +970,20 @@ public class Main extends Application {
                     setStyle("-fx-background-color: #161620; -fx-text-fill: #DCDCE6; -fx-font-size: 12px; -fx-padding: 4 8;");
                 } else {
                     setStyle("-fx-background-color: transparent; -fx-text-fill: #DCDCE6; -fx-font-size: 12px; -fx-padding: 4 8;");
+                }
+            }
+        });
+
+        TextField searchField = new TextField();
+        searchField.setPromptText("Search...");
+        searchField.setFont(Font.font("Segoe UI", 12));
+        searchField.setStyle("-fx-background-color: #141418; -fx-text-fill: #DCDCE6; -fx-prompt-text-fill: #828291; -fx-border-color: #1C1C24; -fx-padding: 6 10;");
+        searchField.textProperty().addListener((obs, old, val) -> {
+            String filter = val.toLowerCase();
+            runningList.getItems().clear();
+            for (String p : allProcesses) {
+                if (filter.isEmpty() || p.toLowerCase().contains(filter)) {
+                    runningList.getItems().add(p);
                 }
             }
         });
@@ -939,9 +1021,9 @@ public class Main extends Application {
         btns.setAlignment(Pos.CENTER_RIGHT);
         btns.getChildren().addAll(cancel, add);
 
-        root.getChildren().addAll(title, procLbl, runningList, err, btns);
+        root.getChildren().addAll(title, procLbl, searchField, runningList, err, btns);
 
-        Scene s = new Scene(root, 420, 360);
+        Scene s = new Scene(root, 460, 440);
         s.setFill(Color.TRANSPARENT);
         d.setScene(s);
         d.centerOnScreen();
@@ -1020,8 +1102,14 @@ public class Main extends Application {
                             } else if (l.contains("[XGS] Scanning for processes")) {
                                 statusLabel.setText(t("status_scanning"));
                                 statusLabel.setTextFill(Color.rgb(255, 200, 50));
+                            } else if (l.contains("[XGS] Engine ready")) {
+                                statusLabel.setText(t("status_ready"));
+                                statusLabel.setTextFill(DIM);
                             } else if (l.contains("[XGS] Connecting to Discord")) {
                                 statusLabel.setText(t("status_connecting"));
+                                statusLabel.setTextFill(Color.rgb(180, 140, 255));
+                            } else if (l.contains("[XGS] Connected to Discord")) {
+                                statusLabel.setText(t("status_connected"));
                                 statusLabel.setTextFill(Color.rgb(180, 140, 255));
                             } else if (l.contains("[XGS] Running")) {
                                 statusLabel.setText(t("status_running"));

@@ -2,6 +2,7 @@ use std::os::windows::ffi::OsStrExt;
 
 #[derive(Debug, Clone)]
 pub struct DiscordPresence {
+    pub name: String,
     pub details: String,
     pub state: String,
     pub large_image: Option<String>,
@@ -151,6 +152,7 @@ impl DiscordIpc {
         }
 
         let mut activity = serde_json::json!({
+            "name": presence.name,
             "details": presence.details,
             "state": presence.state,
         });
@@ -240,8 +242,9 @@ impl DiscordIpc {
         }
 
         let handle_val = self.pipe_handle as usize;
+        let (tx, rx) = std::sync::mpsc::channel();
 
-        let read_result = std::thread::spawn(move || -> Result<Vec<u8>, String> {
+        std::thread::spawn(move || {
             let handle = handle_val as HANDLE;
             unsafe {
                 let mut header = [0u8; 8];
@@ -254,7 +257,8 @@ impl DiscordIpc {
                     std::ptr::null_mut(),
                 );
                 if r == 0 || bytes_read < 8 {
-                    return Err(format!("Failed to read header, error: {}, bytes: {}", GetLastError(), bytes_read));
+                    let _ = tx.send(Err(format!("Failed to read header, error: {}, bytes: {}", GetLastError(), bytes_read)));
+                    return;
                 }
 
                 let opcode = header[0] as u32
@@ -269,7 +273,8 @@ impl DiscordIpc {
                 log::debug!("Read message: opcode={}, length={}", opcode, length);
 
                 if length > 65536 {
-                    return Err(format!("Message too large: {} bytes", length));
+                    let _ = tx.send(Err(format!("Message too large: {} bytes", length)));
+                    return;
                 }
 
                 let mut payload = vec![0u8; length as usize];
@@ -287,22 +292,20 @@ impl DiscordIpc {
                         std::ptr::null_mut(),
                     );
                     if r == 0 || n == 0 {
-                        return Err(format!("Failed to read payload, error: {}", GetLastError()));
+                        let _ = tx.send(Err(format!("Failed to read payload, error: {}", GetLastError())));
+                        return;
                     }
                     payload[total_read as usize..(total_read + n) as usize].copy_from_slice(&chunk[..n as usize]);
                     total_read += n;
                 }
 
-                Ok(payload)
+                let _ = tx.send(String::from_utf8(payload).map_err(|e| format!("Invalid UTF-8: {}", e)));
             }
         });
 
-        match read_result.join() {
-            Ok(Ok(payload)) => {
-                String::from_utf8(payload).map_err(|e| format!("Invalid UTF-8: {}", e))
-            }
-            Ok(Err(e)) => Err(e),
-            Err(_) => Err("Read thread panicked".to_string()),
+        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            Ok(result) => result,
+            Err(_) => Err("Timeout reading Discord response".to_string()),
         }
     }
 

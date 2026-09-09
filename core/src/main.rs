@@ -47,7 +47,7 @@ impl XGameStats {
         log::info!("[XGS] Scan interval: {}ms", self.config.scan_interval_ms);
         log::info!("[XGS] Loading configs...");
         log::info!("[XGS] Scanning for processes...");
-        log::info!("[XGS] Running");
+        log::info!("[XGS] Engine ready");
 
         loop {
             if let Some(process) = self.tracker.scan() {
@@ -118,6 +118,7 @@ impl XGameStats {
             .map(|t| self.render_template(t, game_config));
 
         let presence = DiscordPresence {
+            name: game_config.process_name.replace(".exe", ""),
             details,
             state,
             large_image: game_config.rpc_template.large_image.clone(),
@@ -136,6 +137,8 @@ impl XGameStats {
                 );
                 self.discord_connections.remove(&app_id);
                 log::info!("[XGS] Removed broken connection for {}, will retry next cycle", app_id);
+            } else {
+                log::info!("[XGS] Running");
             }
         }
     }
