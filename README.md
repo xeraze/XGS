@@ -1,10 +1,14 @@
 # XGameStats
 
-Turn any singleplayer game into Discord Rich Presence.
+Universal Discord Rich Presence engine for singleplayer games.
 
 ## What it does
 
 Scans running processes, reads game memory, and shows what you're playing in Discord. No game-specific plugins — just point it at an `.exe` and set the offsets.
+
+## Installation
+
+Download `xgs-setup.exe` and run it. The installer will download all files and set up everything.
 
 ## Requirements
 
@@ -44,9 +48,13 @@ Create a JSON file in `%LocalAppData%\XGameStats\`:
 
 ```
 XGS/
-├── core/           Rust engine
-├── scanner/        C++ memory scanner
-├── hooks/          C process hooks
-├── gui/            JavaFX interface
-└── configs/        Game definitions
+├── core/               Rust engine (RPC, process tracking)
+├── scanner/            C++ memory scanner
+├── hooks/              C process hooks
+├── gui/                JavaFX control panel
+├── installer/          JavaFX installer (GUI)
+├── installer-rs/       Rust installer (console, downloads from GitHub)
+├── configs/            Game definitions
+├── assets/             Icons and logos
+└── translations.json   EN/RU translations
 ```

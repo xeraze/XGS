@@ -34,6 +34,14 @@ extern "system" {
         lpoverlapped: *mut core::ffi::c_void,
     ) -> i32;
 
+    fn ReadFile(
+        hfile: HANDLE,
+        lpbuffer: *mut u8,
+        nnumberofbytestoread: u32,
+        lpnumberofbytesread: *mut u32,
+        lpoverlapped: *mut core::ffi::c_void,
+    ) -> i32;
+
     fn CloseHandle(hobject: HANDLE) -> i32;
 
     fn GetLastError() -> u32;
@@ -63,33 +71,37 @@ impl DiscordIpc {
     }
 
     pub fn connect(&mut self) -> Result<(), String> {
-        let pipe_name: Vec<u16> = std::ffi::OsStr::new("\\\\.\\pipe\\discord-ipc-0")
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect();
+        for idx in 0..10 {
+            let pipe_name: Vec<u16> = std::ffi::OsStr::new(&format!("\\\\.\\pipe\\discord-ipc-{}", idx))
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
 
-        let handle = unsafe {
-            CreateFileW(
-                pipe_name.as_ptr(),
-                GENERIC_READ | GENERIC_WRITE,
-                0,
-                std::ptr::null_mut(),
-                OPEN_EXISTING,
-                FILE_ATTRIBUTE_NORMAL,
-                0 as HANDLE,
-            )
-        };
+            let handle = unsafe {
+                CreateFileW(
+                    pipe_name.as_ptr(),
+                    GENERIC_READ | GENERIC_WRITE,
+                    0,
+                    std::ptr::null_mut(),
+                    OPEN_EXISTING,
+                    FILE_ATTRIBUTE_NORMAL,
+                    0 as HANDLE,
+                )
+            };
 
-        if handle == INVALID_HANDLE_VALUE || handle == INVALID_HANDLE {
-            return Err(format!(
-                "Failed to connect to Discord IPC pipe, error: {}",
-                unsafe { GetLastError() }
-            ));
+            if handle != INVALID_HANDLE_VALUE && handle != INVALID_HANDLE {
+                self.pipe_handle = handle;
+                self.connected = true;
+                log::debug!("Connected to Discord IPC pipe {}", idx);
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                return Ok(());
+            }
         }
 
-        self.pipe_handle = handle;
-        self.connected = true;
-        Ok(())
+        Err(format!(
+            "Failed to connect to any Discord IPC pipe, error: {}",
+            unsafe { GetLastError() }
+        ))
     }
 
     pub fn send_handshake(&mut self) -> Result<(), String> {
@@ -98,7 +110,28 @@ impl DiscordIpc {
             "client_id": self.app_id
         });
 
-        self.send_message(0, handshake.to_string())
+        let msg = handshake.to_string();
+        log::debug!("Sending handshake ({} bytes): {}", msg.len(), msg);
+        self.send_message(0, msg)?;
+        log::debug!("Handshake sent, waiting for response...");
+
+        let response = self.read_message()?;
+        log::debug!("Handshake response ({} bytes): {}", response.len(), response);
+
+        let parsed: serde_json::Value = serde_json::from_str(&response)
+            .map_err(|e| format!("Invalid handshake response: {}", e))?;
+
+        if let Some(code) = parsed.get("code") {
+            if code.as_i64() != Some(0) {
+                let msg = parsed.get("message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("unknown error");
+                return Err(format!("Handshake rejected (code {}): {}", code, msg));
+            }
+        }
+
+        log::info!("Handshake OK");
+        Ok(())
     }
 
     pub fn set_activity(&mut self, presence: &DiscordPresence) -> Result<(), String> {
@@ -142,16 +175,32 @@ impl DiscordIpc {
         });
 
         match self.send_message(1, payload.to_string()) {
-            Ok(()) => Ok(()),
-            Err(_) => {
-                self.connected = false;
-                if self.pipe_handle != 0 as HANDLE && self.pipe_handle != INVALID_HANDLE_VALUE {
-                    unsafe { CloseHandle(self.pipe_handle); }
-                    self.pipe_handle = 0 as HANDLE;
+            Ok(()) => {
+                match self.read_message() {
+                    Ok(resp) => {
+                        log::debug!("Activity response: {}", resp);
+                        Ok(())
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to read activity response: {}", e);
+                        Ok(())
+                    }
                 }
-                self.connect().map_err(|e| e)?;
-                self.send_handshake().map_err(|e| e)?;
-                self.send_message(1, payload.to_string())
+            }
+            Err(e) => {
+                log::warn!("Send failed, reconnecting: {}", e);
+                self.reconnect()?;
+                self.send_message(1, payload.to_string())?;
+                match self.read_message() {
+                    Ok(resp) => {
+                        log::debug!("Activity response after reconnect: {}", resp);
+                        Ok(())
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to read response after reconnect: {}", e);
+                        Ok(())
+                    }
+                }
             }
         }
     }
@@ -166,7 +215,95 @@ impl DiscordIpc {
             "nonce": "2"
         });
 
-        self.send_message(1, payload.to_string())
+        self.send_message(1, payload.to_string())?;
+        let _ = self.read_message();
+        Ok(())
+    }
+
+    fn reconnect(&mut self) -> Result<(), String> {
+        self.connected = false;
+        if self.pipe_handle != 0 as HANDLE && self.pipe_handle != INVALID_HANDLE_VALUE {
+            unsafe { CloseHandle(self.pipe_handle); }
+            self.pipe_handle = 0 as HANDLE;
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        self.connect()?;
+        self.send_handshake()?;
+        Ok(())
+    }
+
+    fn read_message(&mut self) -> Result<String, String> {
+        if !self.connected {
+            return Err("Not connected to Discord IPC".to_string());
+        }
+
+        let handle_val = self.pipe_handle as usize;
+
+        let read_result = std::thread::spawn(move || -> Result<Vec<u8>, String> {
+            let handle = handle_val as HANDLE;
+            unsafe {
+                let mut header = [0u8; 8];
+                let mut bytes_read: u32 = 0;
+                let r = ReadFile(
+                    handle,
+                    header.as_mut_ptr(),
+                    8,
+                    &mut bytes_read,
+                    std::ptr::null_mut(),
+                );
+                if r == 0 || bytes_read < 8 {
+                    return Err(format!("Failed to read header, error: {}, bytes: {}", GetLastError(), bytes_read));
+                }
+
+                let opcode = header[0] as u32
+                    | (header[1] as u32) << 8
+                    | (header[2] as u32) << 16
+                    | (header[3] as u32) << 24;
+                let length = header[4] as u32
+                    | (header[5] as u32) << 8
+                    | (header[6] as u32) << 16
+                    | (header[7] as u32) << 24;
+
+                log::debug!("Read message: opcode={}, length={}", opcode, length);
+
+                if length > 65536 {
+                    return Err(format!("Message too large: {} bytes", length));
+                }
+
+                let mut payload = vec![0u8; length as usize];
+                let mut total_read = 0u32;
+
+                while total_read < length {
+                    let mut chunk = [0u8; 4096];
+                    let to_read = std::cmp::min(4096, length - total_read);
+                    let mut n: u32 = 0;
+                    let r = ReadFile(
+                        handle,
+                        chunk.as_mut_ptr(),
+                        to_read,
+                        &mut n,
+                        std::ptr::null_mut(),
+                    );
+                    if r == 0 || n == 0 {
+                        return Err(format!("Failed to read payload, error: {}", GetLastError()));
+                    }
+                    payload[total_read as usize..(total_read + n) as usize].copy_from_slice(&chunk[..n as usize]);
+                    total_read += n;
+                }
+
+                Ok(payload)
+            }
+        });
+
+        match read_result.join() {
+            Ok(Ok(payload)) => {
+                String::from_utf8(payload).map_err(|e| format!("Invalid UTF-8: {}", e))
+            }
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err("Read thread panicked".to_string()),
+        }
     }
 
     fn send_message(&mut self, opcode: i32, payload: String) -> Result<(), String> {
@@ -196,7 +333,7 @@ impl DiscordIpc {
                 std::ptr::null_mut(),
             );
             if r1 == 0 {
-                return Err("Failed to write header".to_string());
+                return Err(format!("Failed to write header, error: {}", GetLastError()));
             }
 
             let r2 = WriteFile(
@@ -207,7 +344,7 @@ impl DiscordIpc {
                 std::ptr::null_mut(),
             );
             if r2 == 0 {
-                return Err("Failed to write payload".to_string());
+                return Err(format!("Failed to write payload, error: {}", GetLastError()));
             }
         }
 

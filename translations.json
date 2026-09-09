@@ -38,7 +38,7 @@
     "log_removed": "Removed: {0}",
     "settings_title": "Settings",
     "settings_discord_id": "Discord Application ID",
-    "settings_discord_desc": "Global App ID for all games. Individual games can override this.",
+    "settings_discord_desc": "Global App ID for all games. Get it at https://discord.com/developers/applications",
     "settings_language": "Language",
     "settings_avatar": "Show Discord Avatar",
     "settings_avatar_desc": "Display your Discord avatar in the header",
@@ -51,7 +51,17 @@
     "config_not_found": "Config not found",
     "error": "Error",
     "clear": "Clear",
-    "settings_saved": "Settings saved!"
+    "settings_saved": "Settings saved!",
+    "tab_faq": "FAQ",
+    "faq_title": "Frequently Asked Questions",
+    "faq_q1": "Where do I get the Discord Application ID?",
+    "faq_a1": "1. Go to https://discord.com/developers/applications\n2. Click New Application\n3. Enter any name and click Create\n4. Copy the Application ID from the General Information page\n5. Paste it into XGameStats Settings tab\n\nNote: This is NOT your Discord User ID. Every Rich Presence app requires an Application ID.",
+    "faq_q2": "What games are supported?",
+    "faq_a2": "Any singleplayer game that runs as a separate process (.exe). The game must be running for XGameStats to detect it. Multiplayer games with anti-cheat are NOT supported.",
+    "faq_q3": "Why doesn't my game show in the process list?",
+    "faq_a3": "Make sure the game is running, then click \"Refresh\" on the Processes tab. Only .exe processes are shown.",
+    "faq_q4": "How do I report a bug?",
+    "faq_a4": "Go to https://github.com/user/XGameStats/issues and create a new issue. Include your log file from the Logs tab."
   },
   "ru": {
     "app_name": "XGameStats",
@@ -92,7 +102,7 @@
     "log_removed": "Удалено: {0}",
     "settings_title": "Настройки",
     "settings_discord_id": "Discord Application ID",
-    "settings_discord_desc": "Глобальный App ID для всех игр. Отдельные игры могут переопределять.",
+    "settings_discord_desc": "Глобальный App ID для всех игр. Получите на https://discord.com/developers/applications",
     "settings_language": "Язык",
     "settings_avatar": "Показывать аватар Discord",
     "settings_avatar_desc": "Отображать аватар Discord в шапке",
@@ -105,6 +115,16 @@
     "config_not_found": "Конфиг не найден",
     "error": "Ошибка",
     "clear": "Очистить",
-    "settings_saved": "Настройки сохранены!"
+    "settings_saved": "Настройки сохранены!",
+    "tab_faq": "ЧАВО",
+    "faq_title": "Часто задаваемые вопросы",
+    "faq_q1": "Где взять Discord Application ID?",
+    "faq_a1": "1. Зайдите на https://discord.com/developers/applications\n2. Нажмите New Application\n3. Введите любое название и нажмите Create\n4. Скопируйте Application ID со страницы General Information\n5. Вставьте его во вкладку Настройки XGameStats\n\nВажно: Это НЕ ID вашего аккаунта Discord. Любая программа Rich Presence требует Application ID.",
+    "faq_q2": "Какие игры поддерживаются?",
+    "faq_a2": "Любая одиночная игра, которая запускается как отдельный процесс (.exe). Игра должна быть запущена, чтобы XGameStats мог её обнаружить. Многопользовательские игры с античитом НЕ поддерживаются.",
+    "faq_q3": "Почему моя игра не отображается в списке процессов?",
+    "faq_a3": "Убедитесь, что игра запущена, затем нажмите \"Обновить\" на вкладке Процессы. Отображаются только процессы .exe.",
+    "faq_q4": "Как сообщить об ошибке?",
+    "faq_a4": "Зайдите на https://github.com/user/XGameStats/issues и создайте новую задачу. Приложите файл лога из вкладки Логи."
   }
 }

@@ -4,6 +4,7 @@ set DIST_DIR=%~dp0dist
 set CORE_DIR=%~dp0core
 set GUI_DIR=%~dp0gui
 set INSTALLER_DIR=%~dp0installer
+set INSTALLER_RS=%~dp0installer-rs
 set JAVAFX=%GUI_DIR%\javafx-sdk\lib
 set MODS=javafx.controls,javafx.fxml
 
@@ -15,14 +16,14 @@ set VERSION=%VERSION:"=%
 echo [XGS] Building XGameStats v%VERSION%...
 echo.
 
-echo [1/5] Building Rust core...
+echo [1/6] Building Rust core...
 cd /d "%CORE_DIR%"
 cargo +stable-x86_64-pc-windows-gnu build --release
 if %ERRORLEVEL% neq 0 (echo [ERROR] Rust failed & exit /b 1)
 echo [OK] xgs.exe
 echo.
 
-echo [2/5] Compiling Java GUI...
+echo [2/6] Compiling Java GUI...
 cd /d "%GUI_DIR%"
 if exist build\com rmdir /s /q build\com
 javac --module-path "%JAVAFX%" --add-modules %MODS% -d build src\main\java\com\gamepresence\gui\Main.java
@@ -31,7 +32,7 @@ jar --create --file build\xgamestats-gui.jar --main-class com.gamepresence.gui.M
 echo [OK] xgamestats-gui.jar
 echo.
 
-echo [3/5] Compiling Installer...
+echo [3/6] Compiling Installer...
 cd /d "%INSTALLER_DIR%"
 if exist build\com rmdir /s /q build\com
 javac --module-path "%JAVAFX%" --add-modules %MODS% -d build src\main\java\com\xgs\installer\Installer.java
@@ -40,7 +41,14 @@ jar --create --file build\xgs-installer.jar --main-class com.xgs.installer.Insta
 echo [OK] xgs-installer.jar
 echo.
 
-echo [4/5] Assembling distribution...
+echo [4/6] Building Rust installer...
+cd /d "%INSTALLER_RS%"
+cargo +stable-x86_64-pc-windows-gnu build --release
+if %ERRORLEVEL% neq 0 (echo [ERROR] Rust installer failed & exit /b 1)
+echo [OK] xgs-setup.exe
+echo.
+
+echo [5/6] Assembling distribution...
 cd /d "%~dp0"
 if exist "%DIST_DIR%" rmdir /s /q "%DIST_DIR%"
 mkdir "%DIST_DIR%"
@@ -51,6 +59,7 @@ mkdir "%DIST_DIR%\assets"
 copy "%CORE_DIR%\target\x86_64-pc-windows-gnu\release\xgs.exe" "%DIST_DIR%\xgs.exe"
 copy "%GUI_DIR%\build\xgamestats-gui.jar" "%DIST_DIR%\xgamestats-gui.jar"
 copy "%INSTALLER_DIR%\build\xgs-installer.jar" "%DIST_DIR%\xgs-installer.jar"
+copy "%INSTALLER_RS%\target\release\xgs-installer.exe" "%DIST_DIR%\xgs-setup.exe"
 copy "%~dp0libscanner.dll" "%DIST_DIR%\libscanner.dll"
 copy "%~dp0libhooks.dll" "%DIST_DIR%\libhooks.dll"
 copy "%~dp0translations.json" "%DIST_DIR%\translations.json"
@@ -64,7 +73,7 @@ copy "%~dp0assets\logo.ico" "%DIST_DIR%\assets\logo.ico"
 echo [OK] dist/ ready
 echo.
 
-echo [5/5] Creating ZIP...
+echo [6/6] Creating ZIP...
 powershell -command "Compress-Archive -Path '%DIST_DIR%\*' -DestinationPath '%~dp0XGameStats-v%VERSION%.zip' -Force"
 echo [OK] XGameStats-v%VERSION%.zip
 echo.

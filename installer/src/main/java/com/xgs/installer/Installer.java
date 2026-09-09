@@ -31,7 +31,7 @@ import javafx.util.Duration;
 public class Installer extends Application {
 
     private static final String APP_NAME = "XGameStats Installer";
-    private static final String VERSION  = "0.5.0";
+    private static final String VERSION  = "0.6.0";
 
     private static final Color ACCENT  = Color.rgb(88, 166, 255);
     private static final Color TEXT    = Color.rgb(230, 230, 238);

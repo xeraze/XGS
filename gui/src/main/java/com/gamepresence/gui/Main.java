@@ -20,10 +20,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 import javafx.animation.FadeTransition;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -56,7 +60,7 @@ import javafx.util.Duration;
 public class Main extends Application {
 
     private static final String APP_NAME    = "XGameStats";
-    private static final String APP_VERSION = "0.5.0";
+    private static final String APP_VERSION = "0.6.0";
     private static final String CONFIG_DIR  = System.getProperty("user.home")
             + File.separator + "AppData" + File.separator + "Local"
             + File.separator + "XGameStats";
@@ -71,6 +75,7 @@ public class Main extends Application {
     private Process          engineProcess;
     private ListView<String> processList;
     private TextArea         logArea;
+    private boolean          userScrolledUp = false;
     private Label            statusLabel;
     private StackPane        contentPane;
     private HBox             tabBar;
@@ -202,7 +207,7 @@ public class Main extends Application {
 
     private void showSplash(Stage stage) {
         StackPane root = new StackPane();
-        root.setStyle("-fx-background-color: #0E0E14;");
+        root.setStyle("-fx-background-color: #0A0A0E;");
 
         VBox box = new VBox(20);
         box.setAlignment(Pos.CENTER);
@@ -241,7 +246,7 @@ public class Main extends Application {
 
     private void showMain(Stage stage) {
         BorderPane root = new BorderPane();
-        root.setStyle("-fx-background-color: #0E0E14;");
+        root.setStyle("-fx-background-color: #0A0A0E;");
 
         HBox header = createHeader(stage);
         root.setTop(header);
@@ -277,7 +282,7 @@ public class Main extends Application {
         HBox h = new HBox();
         h.setAlignment(Pos.CENTER_LEFT);
         h.setPadding(new Insets(12, 24, 12, 24));
-        h.setStyle("-fx-background-color: #111118;");
+        h.setStyle("-fx-background-color: #0C0C10;");
 
         VBox tb = new VBox(2);
         Text t = new Text(APP_NAME);
@@ -354,10 +359,12 @@ public class Main extends Application {
                 try {
                     java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(f);
                     if (img != null) {
-                        java.awt.image.BufferedImage resized = new java.awt.image.BufferedImage(64, 64, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                        java.awt.image.BufferedImage resized = new java.awt.image.BufferedImage(256, 256, java.awt.image.BufferedImage.TYPE_INT_ARGB);
                         java.awt.Graphics2D g = resized.createGraphics();
                         g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-                        g.drawImage(img, 0, 0, 64, 64, null);
+                        g.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING, java.awt.RenderingHints.VALUE_RENDER_QUALITY);
+                        g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+                        g.drawImage(img, 0, 0, 256, 256, null);
                         g.dispose();
                         return resized;
                     }
@@ -369,11 +376,55 @@ public class Main extends Application {
 
     private void minimizeToTray(Stage stage) {
         stage.hide();
-        if (trayIcon != null) {
-            trayIcon.displayMessage(APP_NAME,
-                t("tray_minimized"),
-                TrayIcon.MessageType.INFO);
-        }
+        showNotification(t("tray_minimized"));
+    }
+
+    private void showNotification(String message) {
+        Stage popup = new Stage();
+        popup.initStyle(StageStyle.UNDECORATED);
+        popup.setAlwaysOnTop(true);
+        popup.initStyle(StageStyle.TRANSPARENT);
+
+        VBox root = new VBox(8);
+        root.setPadding(new Insets(14, 18, 14, 18));
+        root.setStyle("-fx-background-color: #141418; -fx-border-color: #1C1C24;");
+
+        Text title = new Text(APP_NAME);
+        title.setFont(Font.font("Segoe UI", FontWeight.BOLD, 13));
+        title.setFill(ACCENT);
+
+        Text msg = new Text(message);
+        msg.setFont(Font.font("Segoe UI", 12));
+        msg.setFill(TEXT);
+        msg.setWrappingWidth(280);
+
+        root.getChildren().addAll(title, msg);
+
+        Scene sc = new Scene(root, 320, 100);
+        sc.setFill(Color.TRANSPARENT);
+        popup.setScene(sc);
+
+        var bounds = Screen.getPrimary().getBounds();
+        popup.setX(bounds.getMaxX() - 340);
+        popup.setY(bounds.getMaxY() - 140);
+
+        popup.show();
+
+        FadeTransition fadeIn = new FadeTransition(Duration.millis(300), root);
+        fadeIn.setFromValue(0.0);
+        fadeIn.setToValue(1.0);
+        fadeIn.play();
+
+        new Thread(() -> {
+            try { Thread.sleep(3000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            Platform.runLater(() -> {
+                FadeTransition fadeOut = new FadeTransition(Duration.millis(400), root);
+                fadeOut.setFromValue(1.0);
+                fadeOut.setToValue(0.0);
+                fadeOut.setOnFinished(e2 -> popup.close());
+                fadeOut.play();
+            });
+        }).start();
     }
 
     private void showFromTray(Stage stage) {
@@ -389,17 +440,18 @@ public class Main extends Application {
     }
 
     private java.awt.Image buildTrayImage() {
-        int sz = 64;
+        int sz = 256;
         BufferedImage img = new BufferedImage(sz, sz, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setColor(new java.awt.Color(14, 14, 20));
-        g.fillOval(2, 2, sz - 4, sz - 4);
+        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g.setColor(new java.awt.Color(10, 10, 14));
+        g.fillOval(8, 8, sz - 16, sz - 16);
         g.setColor(new java.awt.Color(88, 166, 255));
-        g.setStroke(new BasicStroke(3f));
-        g.drawOval(4, 4, sz - 8, sz - 8);
+        g.setStroke(new BasicStroke(8f));
+        g.drawOval(16, 16, sz - 32, sz - 32);
         g.setColor(new java.awt.Color(220, 220, 230));
-        g.setFont(new java.awt.Font("Segoe UI", java.awt.Font.BOLD, 34));
+        g.setFont(new java.awt.Font("Segoe UI", java.awt.Font.BOLD, 140));
         FontMetrics fm = g.getFontMetrics();
         String ltr = "X";
         g.drawString(ltr, (sz - fm.stringWidth(ltr)) / 2, (sz - fm.getHeight()) / 2 + fm.getAscent());
@@ -434,29 +486,28 @@ public class Main extends Application {
         int r  = Math.min(255, (int)(c.getRed()   * 255 * f));
         int g  = Math.min(255, (int)(c.getGreen() * 255 * f));
         int bl = Math.min(255, (int)(c.getBlue()  * 255 * f));
-        return "-fx-background-color: rgb(" + r + "," + g + "," + bl + "); "
-             + "-fx-background-radius: 6; -fx-cursor: hand; -fx-padding: 8 20;";
+        return "-fx-background-color: rgb(" + r + "," + g + "," + bl + "); -fx-cursor: hand; -fx-padding: 8 20;";
     }
 
     private Button accentBtn(String text) {
         Button b = new Button(text);
         b.setFont(Font.font("Segoe UI", 12));
         b.setTextFill(TEXT);
-        b.setStyle("-fx-background-color: #1E1E2A; -fx-background-radius: 6; -fx-cursor: hand; -fx-padding: 8 18;");
-        b.setOnMouseEntered(e -> b.setStyle("-fx-background-color: rgba(88,166,255,0.2); -fx-background-radius: 6; -fx-cursor: hand; -fx-padding: 8 18;"));
-        b.setOnMouseExited(e -> b.setStyle("-fx-background-color: #1E1E2A; -fx-background-radius: 6; -fx-cursor: hand; -fx-padding: 8 18;"));
+        b.setStyle("-fx-background-color: #181820; -fx-cursor: hand; -fx-padding: 8 18;");
+        b.setOnMouseEntered(e -> b.setStyle("-fx-background-color: rgba(88,166,255,0.2); -fx-cursor: hand; -fx-padding: 8 18;"));
+        b.setOnMouseExited(e -> b.setStyle("-fx-background-color: #181820; -fx-cursor: hand; -fx-padding: 8 18;"));
         return b;
     }
 
     private VBox createContent() {
         VBox v = new VBox();
         v.setPadding(new Insets(16, 20, 16, 20));
-        v.setStyle("-fx-background-color: #121218; -fx-background-radius: 12;");
+        v.setStyle("-fx-background-color: #0D0D12;");
 
         tabBar = new HBox(0);
         tabBar.setPadding(new Insets(0, 0, 12, 0));
 
-        String[] tabs = {t("tab_processes"), t("tab_configs"), t("tab_logs"), t("tab_settings")};
+        String[] tabs = {t("tab_processes"), t("tab_configs"), t("tab_logs"), t("tab_settings"), t("tab_faq")};
         for (int i = 0; i < tabs.length; i++) {
             final int idx = i;
             Label lbl = new Label(tabs[i]);
@@ -487,6 +538,7 @@ public class Main extends Application {
             case 1 -> newContent = buildConfigTab();
             case 2 -> newContent = buildLogTab();
             case 3 -> newContent = buildSettingsTab();
+            case 4 -> newContent = buildFaqTab();
             default -> newContent = buildProcessTab();
         }
 
@@ -514,13 +566,13 @@ public class Main extends Application {
                 if (empty || item == null) {
                     setStyle("-fx-background-color: transparent; -fx-text-fill: #DCDCE6; -fx-font-size: 13px; -fx-padding: 8 12;");
                 } else if (isSelected()) {
-                    setStyle("-fx-background-color: #1A1A28; -fx-text-fill: #DCDCE6; -fx-font-size: 13px; -fx-padding: 8 12;");
+                    setStyle("-fx-background-color: #161620; -fx-text-fill: #DCDCE6; -fx-font-size: 13px; -fx-padding: 8 12;");
                 } else {
                     setStyle("-fx-background-color: transparent; -fx-text-fill: #DCDCE6; -fx-font-size: 13px; -fx-padding: 8 12;");
                 }
             }
         });
-        processList.setStyle("-fx-background-color: #14141C; -fx-border-color: #222230; -fx-border-radius: 8; -fx-background-radius: 8;");
+        processList.setStyle("-fx-background-color: #0E0E12; -fx-border-color: #1C1C24;");
         processList.getFocusModel().focusedIndexProperty().addListener((obs, old, val) -> processList.refresh());
         processList.getSelectionModel().selectedItemProperty().addListener((obs, old, val) -> processList.refresh());
         VBox.setVgrow(processList, Priority.ALWAYS);
@@ -528,7 +580,13 @@ public class Main extends Application {
         HBox btns = new HBox(8);
 
         Button start = coloredBtn(t("btn_start"), GREEN);
-        start.setOnAction(e -> startEngine());
+        start.setOnAction(e -> {
+            if (processList.getSelectionModel().getSelectedItem() == null) {
+                showConfirmDialog(primaryStage, t("select_process_first"), () -> {});
+                return;
+            }
+            startEngine();
+        });
 
         Button stop = coloredBtn(t("btn_stop"), RED);
         stop.setOnAction(e -> stopEngine());
@@ -572,7 +630,7 @@ public class Main extends Application {
             String content = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
             TextArea ed = new TextArea(content);
             ed.setFont(Font.font("Consolas", 13));
-            ed.setStyle("-fx-control-inner-background: #14141C; -fx-text-fill: #DCDCE6; -fx-border-color: #222230; -fx-border-radius: 8; -fx-background-radius: 8;");
+            ed.setStyle("-fx-control-inner-background: #0E0E12; -fx-text-fill: #DCDCE6; -fx-border-color: #1C1C24;");
             ed.setPrefHeight(320);
             VBox.setVgrow(ed, Priority.ALWAYS);
 
@@ -593,9 +651,21 @@ public class Main extends Application {
         logArea = new TextArea();
         logArea.setEditable(false);
         logArea.setFont(Font.font("Consolas", 12));
-        logArea.setStyle("-fx-control-inner-background: #14141C; -fx-text-fill: #DCDCE6; -fx-border-color: #222230; -fx-border-radius: 8; -fx-background-radius: 8;");
+        logArea.setStyle("-fx-control-inner-background: #0E0E12; -fx-text-fill: #DCDCE6; -fx-border-color: #1C1C24;");
         logArea.setPrefHeight(320);
         logArea.setWrapText(false);
+
+        logArea.textProperty().addListener((obs, old, val) -> {
+            if (!userScrolledUp) {
+                logArea.setScrollTop(Double.MAX_VALUE);
+            }
+        });
+
+        logArea.scrollTopProperty().addListener((obs, old, val) -> {
+            double max = logArea.heightProperty().doubleValue();
+            double top = val.doubleValue();
+            userScrolledUp = top < max && top > 0;
+        });
         VBox.setVgrow(logArea, Priority.ALWAYS);
 
         Button clr = accentBtn(t("btn_clear"));
@@ -630,8 +700,7 @@ public class Main extends Application {
         ChoiceBox<String> langBox = new ChoiceBox<>();
         langBox.getItems().addAll("English", "\u0420\u0443\u0441\u0441\u043a\u0438\u0439");
         langBox.setValue("en".equals(language) ? "English" : "\u0420\u0443\u0441\u0441\u043a\u0438\u0439");
-        langBox.setStyle("-fx-background-color: #14141C; -fx-border-color: #222230; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 4;");
-        langBox.lookup(".list-cell").setStyle("-fx-text-fill: #DCDCE6; -fx-background-color: transparent;");
+        langBox.setStyle("-fx-background-color: #0A0A0E; -fx-border-color: #1C1C28; -fx-padding: 4;");
 
         Button apply = accentBtn(t("btn_apply"));
         apply.setOnAction(e -> {
@@ -640,6 +709,11 @@ public class Main extends Application {
 
             if (newAppId.isEmpty()) {
                 showConfirmDialog(primaryStage, t("err_enter_id"), () -> {});
+                return;
+            }
+
+            if (!newAppId.matches("\\d{17,20}")) {
+                showConfirmDialog(primaryStage, t("err_invalid_id"), () -> {});
                 return;
             }
 
@@ -654,6 +728,47 @@ public class Main extends Application {
         VBox.setVgrow(spacer, Priority.ALWAYS);
 
         p.getChildren().addAll(title, discordLbl, discordDesc, discordField, langLbl, langBox, spacer, apply);
+        return p;
+    }
+
+    private VBox buildFaqTab() {
+        VBox p = new VBox(16);
+        p.setPadding(new Insets(4, 0, 0, 0));
+
+        Text title = new Text(t("faq_title"));
+        title.setFont(Font.font("Segoe UI", FontWeight.BOLD, 16));
+        title.setFill(TEXT);
+
+        String[][] faqs = {
+            {t("faq_q1"), t("faq_a1")},
+            {t("faq_q2"), t("faq_a2")},
+            {t("faq_q3"), t("faq_a3")},
+            {t("faq_q4"), t("faq_a4")}
+        };
+
+        VBox items = new VBox(12);
+        for (String[] faq : faqs) {
+            VBox item = new VBox(4);
+            item.setPadding(new Insets(12));
+            item.setStyle("-fx-background-color: #0E0E12; -fx-border-color: #1C1C24;");
+
+            Text q = new Text(faq[0]);
+            q.setFont(Font.font("Segoe UI", FontWeight.BOLD, 13));
+            q.setFill(ACCENT);
+
+            Text a = new Text(faq[1]);
+            a.setFont(Font.font("Segoe UI", 12));
+            a.setFill(TEXT);
+            a.setWrappingWidth(700);
+
+            item.getChildren().addAll(q, a);
+            items.getChildren().add(item);
+        }
+
+        Region spacer = new Region();
+        VBox.setVgrow(spacer, Priority.ALWAYS);
+
+        p.getChildren().addAll(title, items, spacer);
         return p;
     }
 
@@ -694,7 +809,7 @@ public class Main extends Application {
 
         VBox root = new VBox(15);
         root.setPadding(new Insets(25));
-        root.setStyle("-fx-background-color: #14141C; -fx-background-radius: 12; -fx-border-color: #222230; -fx-border-radius: 12;");
+        root.setStyle("-fx-background-color: #0E0E12; -fx-border-color: #1C1C24;");
         root.setOnMousePressed(e -> { off[0] = e.getScreenX() - d.getX(); off[1] = e.getScreenY() - d.getY(); });
         root.setOnMouseDragged(e -> { d.setX(e.getScreenX() - off[0]); d.setY(e.getScreenY() - off[1]); });
 
@@ -728,7 +843,7 @@ public class Main extends Application {
         HBox bar = new HBox();
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.setPadding(new Insets(10, 24, 10, 24));
-        bar.setStyle("-fx-background-color: #0E0E14;");
+        bar.setStyle("-fx-background-color: #0A0A0E;");
 
         statusLabel = new Label(t("status_idle"));
         statusLabel.setFont(Font.font("Segoe UI", 11));
@@ -757,7 +872,7 @@ public class Main extends Application {
 
         VBox root = new VBox(15);
         root.setPadding(new Insets(25));
-        root.setStyle("-fx-background-color: #14141C; -fx-background-radius: 12; -fx-border-color: #222230; -fx-border-radius: 12;");
+        root.setStyle("-fx-background-color: #0E0E12; -fx-border-color: #1C1C24;");
         root.setOnMousePressed(e -> { off[0] = e.getScreenX() - d.getX(); off[1] = e.getScreenY() - d.getY(); });
         root.setOnMouseDragged(e -> { d.setX(e.getScreenX() - off[0]); d.setY(e.getScreenY() - off[1]); });
 
@@ -765,8 +880,27 @@ public class Main extends Application {
         title.setFont(Font.font("Segoe UI", FontWeight.BOLD, 16));
         title.setFill(TEXT);
 
-        TextField pf = makeField(t("dialog_process_name"));
-        TextField af = makeField(t("dialog_discord_id"));
+        Text procLbl = new Text(t("dialog_process_name"));
+        procLbl.setFont(Font.font("Segoe UI", 12));
+        procLbl.setFill(TEXT);
+
+        ListView<String> runningList = new ListView<>();
+        runningList.setPrefHeight(180);
+        runningList.getItems().addAll(getRunningProcesses());
+        runningList.setStyle("-fx-background-color: #0E0E12; -fx-border-color: #1C1C24;");
+        runningList.setCellFactory(lv -> new ListCell<String>() {
+            @Override protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null : item);
+                if (empty || item == null) {
+                    setStyle("-fx-background-color: transparent; -fx-text-fill: #DCDCE6; -fx-font-size: 12px; -fx-padding: 4 8;");
+                } else if (isSelected()) {
+                    setStyle("-fx-background-color: #161620; -fx-text-fill: #DCDCE6; -fx-font-size: 12px; -fx-padding: 4 8;");
+                } else {
+                    setStyle("-fx-background-color: transparent; -fx-text-fill: #DCDCE6; -fx-font-size: 12px; -fx-padding: 4 8;");
+                }
+            }
+        });
 
         Text err = new Text("");
         err.setFill(RED);
@@ -776,15 +910,21 @@ public class Main extends Application {
 
         Button add = coloredBtn(t("btn_add"), ACCENT);
         add.setOnAction(e -> {
-            String p = pf.getText().trim();
-            String a = af.getText().trim();
-            if (p.isEmpty()) { err.setText(t("err_enter_process")); return; }
-            if (!p.toLowerCase().endsWith(".exe")) { err.setText(t("err_must_exe")); return; }
-            if (a.isEmpty() && globalAppId.isEmpty()) { err.setText(t("err_enter_id")); return; }
-            if (!a.isEmpty() && !a.matches("\\d{17,20}")) { err.setText(t("err_invalid_id")); return; }
-            if (!isProcessRunning(p)) { err.setText(t("err_process_not_found")); return; }
-            String appId = a.isEmpty() ? globalAppId : a;
-            saveConfig(p, appId);
+            String sel = runningList.getSelectionModel().getSelectedItem();
+            if (sel == null || sel.isEmpty()) {
+                err.setText(t("err_enter_process"));
+                return;
+            }
+            String p = sel.trim();
+            if (!p.toLowerCase().endsWith(".exe")) {
+                err.setText(t("err_must_exe"));
+                return;
+            }
+            if (globalAppId.isEmpty()) {
+                err.setText(t("err_enter_id"));
+                return;
+            }
+            saveConfig(p, globalAppId);
             processList.getItems().clear();
             processList.getItems().addAll(loadConfigs());
             log(t("log_added").replace("{0}", p));
@@ -795,9 +935,9 @@ public class Main extends Application {
         btns.setAlignment(Pos.CENTER_RIGHT);
         btns.getChildren().addAll(cancel, add);
 
-        root.getChildren().addAll(title, pf, af, err, btns);
+        root.getChildren().addAll(title, procLbl, runningList, err, btns);
 
-        Scene s = new Scene(root, 420, 270);
+        Scene s = new Scene(root, 420, 360);
         s.setFill(Color.TRANSPARENT);
         d.setScene(s);
         d.centerOnScreen();
@@ -810,27 +950,43 @@ public class Main extends Application {
         d.show();
     }
 
-    private boolean isProcessRunning(String processName) {
+    private java.util.List<String> getRunningProcesses() {
+        java.util.List<String> processes = new java.util.ArrayList<>();
         try {
-            ProcessBuilder pb = new ProcessBuilder("tasklist", "/FI", "IMAGENAME eq " + processName);
+            ProcessBuilder pb = new ProcessBuilder("tasklist", "/FO", "CSV", "/NH");
             pb.redirectErrorStream(true);
             Process proc = pb.start();
-            try (BufferedReader r = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+            try (BufferedReader r = new BufferedReader(new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = r.readLine()) != null) {
-                    if (line.toLowerCase().contains(processName.toLowerCase())) return true;
+                    line = line.trim();
+                    if (line.isEmpty()) continue;
+                    String[] parts = line.split(",");
+                    if (parts.length > 0) {
+                        String name = parts[0].replace("\"", "").trim();
+                        if (name.toLowerCase().endsWith(".exe") && !name.equalsIgnoreCase("svchost.exe")
+                            && !name.equalsIgnoreCase("csrss.exe") && !name.equalsIgnoreCase("lsass.exe")
+                            && !name.equalsIgnoreCase("services.exe") && !name.equalsIgnoreCase("wininit.exe")
+                            && !name.equalsIgnoreCase("winlogon.exe") && !name.equalsIgnoreCase("dwm.exe")
+                            && !name.equalsIgnoreCase("explorer.exe") && !name.equalsIgnoreCase("taskhostw.exe")
+                            && !name.equalsIgnoreCase("RuntimeBroker.exe") && !name.equalsIgnoreCase("ShellExperienceHost.exe")
+                            && !name.equalsIgnoreCase("SearchUI.exe") && !name.equalsIgnoreCase("StartMenuExperienceHost.exe")) {
+                            processes.add(name);
+                        }
+                    }
                 }
             }
             proc.waitFor();
         } catch (IOException | InterruptedException e) { }
-        return false;
+        java.util.Collections.sort(processes, String.CASE_INSENSITIVE_ORDER);
+        return processes;
     }
 
     private TextField makeField(String prompt) {
         TextField f = new TextField();
         f.setPromptText(prompt);
         f.setFont(Font.font("Segoe UI", 13));
-        f.setStyle("-fx-background-color: #1A1A24; -fx-text-fill: #DCDCE6; -fx-prompt-text-fill: #828291; -fx-border-color: #222230; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 10;");
+        f.setStyle("-fx-background-color: #141418; -fx-text-fill: #DCDCE6; -fx-prompt-text-fill: #828291; -fx-border-color: #1C1C24; -fx-padding: 10;");
         return f;
     }
 

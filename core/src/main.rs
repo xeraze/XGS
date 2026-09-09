@@ -22,6 +22,7 @@ struct XGameStats {
     tracker: ProcessTracker,
     discord_connections: HashMap<String, DiscordIpc>,
     start_time: i64,
+    last_connect_attempt: HashMap<String, std::time::Instant>,
 }
 
 impl XGameStats {
@@ -36,6 +37,7 @@ impl XGameStats {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs() as i64,
+            last_connect_attempt: HashMap::new(),
         }
     }
 
@@ -73,26 +75,33 @@ impl XGameStats {
         }
 
         if !self.discord_connections.contains_key(&app_id) {
+            if let Some(last_attempt) = self.last_connect_attempt.get(&app_id) {
+                if last_attempt.elapsed() < Duration::from_secs(5) {
+                    return;
+                }
+            }
             log::info!("[XGS] Connecting to Discord (app_id: {})...", app_id);
+            self.last_connect_attempt.insert(app_id.clone(), std::time::Instant::now());
             let mut ipc = DiscordIpc::new(&app_id);
-            if let Err(e) = ipc.connect() {
-                log::error!(
-                    "Failed to connect to Discord for {}: {}",
-                    game_config.process_name,
-                    e
-                );
-                return;
+            match ipc.connect() {
+                Ok(()) => {
+                    log::info!("[XGS] IPC pipe connected, sending handshake...");
+                    match ipc.send_handshake() {
+                        Ok(()) => {
+                            self.discord_connections.insert(app_id.clone(), ipc);
+                            log::info!("[XGS] Connected to Discord for {}", game_config.process_name);
+                        }
+                        Err(e) => {
+                            log::error!("[XGS] Handshake failed for {}: {}", game_config.process_name, e);
+                            return;
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!("[XGS] Failed to connect to Discord for {}: {}", game_config.process_name, e);
+                    return;
+                }
             }
-            if let Err(e) = ipc.send_handshake() {
-                log::error!(
-                    "Handshake failed for {}: {}",
-                    game_config.process_name,
-                    e
-                );
-                return;
-            }
-            self.discord_connections.insert(app_id.clone(), ipc);
-            log::info!("[XGS] Connected to Discord for {}", game_config.process_name);
         }
 
         let details = self.render_template(&game_config.rpc_template.details, game_config);
@@ -125,6 +134,8 @@ impl XGameStats {
                     game_config.process_name,
                     e
                 );
+                self.discord_connections.remove(&app_id);
+                log::info!("[XGS] Removed broken connection for {}, will retry next cycle", app_id);
             }
         }
     }
@@ -351,7 +362,7 @@ fn launch_gui() {
 }
 
 fn print_usage() {
-    println!("XGameStats v0.5.0 - Discord Rich Presence Engine");
+    println!("XGameStats v0.6.0 - Discord Rich Presence Engine");
     println!();
     println!("Usage: xgs.exe <command>");
     println!();
@@ -373,7 +384,9 @@ fn main() {
 
     match command {
         "engine" | "e" => {
-            std::env::set_var("RUST_LOG", "info");
+            if std::env::var("RUST_LOG").is_err() {
+                std::env::set_var("RUST_LOG", "info");
+            }
             env_logger::init();
 
             let config = AppConfig::load(None).unwrap_or_else(|e| {
