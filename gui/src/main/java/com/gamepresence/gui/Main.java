@@ -158,11 +158,19 @@ public class Main extends Application {
                 int kq2 = block.indexOf('"', kq + 1);
                 if (kq2 < 0) break;
                 String key = block.substring(kq + 1, kq2);
-                int vq = block.indexOf('"', kq2 + 1);
+                int colon = block.indexOf(':', kq2);
+                if (colon < 0) break;
+                int vq = block.indexOf('"', colon + 1);
                 if (vq < 0) break;
-                int vq2 = block.indexOf('"', vq + 1);
-                if (vq2 < 0) break;
+                int vq2 = vq + 1;
+                while (vq2 < block.length()) {
+                    char c = block.charAt(vq2);
+                    if (c == '\\') { vq2 += 2; continue; }
+                    if (c == '"') break;
+                    vq2++;
+                }
                 String val = block.substring(vq + 1, vq2);
+                val = val.replace("\\n", "\n").replace("\\\"", "\"");
                 map.put(key, val);
                 p = vq2 + 1;
             }
