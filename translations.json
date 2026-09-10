@@ -63,7 +63,13 @@
     "faq_q3": "Why doesn't my game show in the process list?",
     "faq_a3": "Make sure the game is running, then click \"Refresh\" on the Processes tab. Only .exe processes are shown.",
     "faq_q4": "How do I report a bug?",
-    "faq_a4": "Go to https://github.com/user/XGameStats/issues and create a new issue. Include your log file from the Logs tab."
+    "faq_a4": "Go to https://github.com/user/XGameStats/issues and create a new issue. Include your log file from the Logs tab.",
+    "faq_q5": "How do Unity and Unreal Engine games work?",
+    "faq_a5": "XGS auto-detects Unity and Unreal Engine games by checking for UnityPlayer.dll or Engine.dll in the game directory. Memory patterns for level, health, and character class are applied automatically.",
+    "faq_q6": "How do I add a game that's not Unity or Unreal?",
+    "faq_a6": "Create a JSON file in %LocalAppData%\\XGameStats\\ with pointers to the memory addresses. Use Cheat Engine to find the offsets.",
+    "faq_q7": "How do I find memory offsets?",
+    "faq_a7": "1. Download Cheat Engine\\n2. Open your game\\n3. Scan for the value you want (e.g., health)\\n4. Change the value in-game and scan again\\n5. Repeat until you find the address\\n6. Add the address and offsets to your JSON config"
   },
   "ru": {
     "app_name": "XGameStats",
@@ -129,6 +135,12 @@
     "faq_q3": "Почему моя игра не отображается в списке процессов?",
     "faq_a3": "Убедитесь, что игра запущена, затем нажмите \"Обновить\" на вкладке Процессы. Отображаются только процессы .exe.",
     "faq_q4": "Как сообщить об ошибке?",
-    "faq_a4": "Зайдите на https://github.com/user/XGameStats/issues и создайте новую задачу. Приложите файл лога из вкладки Логи."
+    "faq_a4": "Зайдите на https://github.com/user/XGameStats/issues и создайте новую задачу. Приложите файл лога из вкладки Логи.",
+    "faq_q5": "Как работают игры на Unity и Unreal Engine?",
+    "faq_a5": "XGS автоматически определяет игры на Unity и Unreal Engine, проверяя наличие UnityPlayer.dll или Engine.dll в папке игры. Паттерны памяти для уровня, здоровья и класса персонажа применяются автоматически.",
+    "faq_q6": "Как добавить игру, которая не на Unity или Unreal?",
+    "faq_a6": "Создайте JSON файл в %LocalAppData%\\XGameStats\\ с указателями на адреса памяти. Используйте Cheat Engine для поиска offsets.",
+    "faq_q7": "Как найти memory offsets?",
+    "faq_a7": "1. Скачайте Cheat Engine\\n2. Откройте игру\\n3. Ищите нужное значение (например, здоровье)\\n4. Измените значение в игре и ищите снова\\n5. Повторяйте, пока не найдёте адрес\\n6. Добавьте адрес и offsets в JSON конфиг"
   }
 }

@@ -4,7 +4,7 @@ title XGameStats
 mode con: cols=50 lines=24
 cls
 echo.
-echo   XGameStats v0.6.0
+echo   XGameStats v0.7.0
 echo   Discord Rich Presence Engine
 echo.
 echo   1)  Start XGameStats

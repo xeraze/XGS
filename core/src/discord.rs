@@ -13,7 +13,6 @@ pub struct DiscordPresence {
 }
 
 type HANDLE = *mut core::ffi::c_void;
-const INVALID_HANDLE: HANDLE = -1isize as HANDLE;
 const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
 
 extern "system" {
@@ -59,6 +58,9 @@ pub struct DiscordIpc {
     pipe_handle: HANDLE,
 }
 
+// SAFETY: DiscordIpc wraps a Windows named pipe HANDLE for synchronous IPC.
+// ReadFile/WriteFile are thread-safe for non-overlapped handles.
+// The Discord IPC protocol is single-writer/single-reader by design.
 unsafe impl Send for DiscordIpc {}
 unsafe impl Sync for DiscordIpc {}
 
@@ -90,7 +92,7 @@ impl DiscordIpc {
                 )
             };
 
-            if handle != INVALID_HANDLE_VALUE && handle != INVALID_HANDLE {
+            if handle != INVALID_HANDLE_VALUE && !handle.is_null() {
                 self.pipe_handle = handle;
                 self.connected = true;
                 log::debug!("Connected to Discord IPC pipe {}", idx);
@@ -178,31 +180,17 @@ impl DiscordIpc {
 
         match self.send_message(1, payload.to_string()) {
             Ok(()) => {
-                match self.read_message() {
-                    Ok(resp) => {
-                        log::debug!("Activity response: {}", resp);
-                        Ok(())
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to read activity response: {}", e);
-                        Ok(())
-                    }
-                }
+                let resp = self.read_message()?;
+                log::debug!("Activity response: {}", resp);
+                Ok(())
             }
             Err(e) => {
                 log::warn!("Send failed, reconnecting: {}", e);
                 self.reconnect()?;
                 self.send_message(1, payload.to_string())?;
-                match self.read_message() {
-                    Ok(resp) => {
-                        log::debug!("Activity response after reconnect: {}", resp);
-                        Ok(())
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to read response after reconnect: {}", e);
-                        Ok(())
-                    }
-                }
+                let resp = self.read_message()?;
+                log::debug!("Activity response after reconnect: {}", resp);
+                Ok(())
             }
         }
     }
@@ -218,7 +206,8 @@ impl DiscordIpc {
         });
 
         self.send_message(1, payload.to_string())?;
-        let _ = self.read_message();
+        let resp = self.read_message()?;
+        log::debug!("Clear activity response: {}", resp);
         Ok(())
     }
 
@@ -232,7 +221,10 @@ impl DiscordIpc {
         std::thread::sleep(std::time::Duration::from_millis(500));
 
         self.connect()?;
-        self.send_handshake()?;
+        if let Err(e) = self.send_handshake() {
+            self.connected = false;
+            return Err(e);
+        }
         Ok(())
     }
 
@@ -241,71 +233,57 @@ impl DiscordIpc {
             return Err("Not connected to Discord IPC".to_string());
         }
 
-        let handle_val = self.pipe_handle as usize;
-        let (tx, rx) = std::sync::mpsc::channel();
+        unsafe {
+            let mut header = [0u8; 8];
+            let mut bytes_read: u32 = 0;
+            let r = ReadFile(
+                self.pipe_handle,
+                header.as_mut_ptr(),
+                8,
+                &mut bytes_read,
+                std::ptr::null_mut(),
+            );
+            if r == 0 || bytes_read < 8 {
+                return Err(format!("Failed to read header, error: {}, bytes: {}", GetLastError(), bytes_read));
+            }
 
-        std::thread::spawn(move || {
-            let handle = handle_val as HANDLE;
-            unsafe {
-                let mut header = [0u8; 8];
-                let mut bytes_read: u32 = 0;
+            let opcode = header[0] as u32
+                | (header[1] as u32) << 8
+                | (header[2] as u32) << 16
+                | (header[3] as u32) << 24;
+            let length = header[4] as u32
+                | (header[5] as u32) << 8
+                | (header[6] as u32) << 16
+                | (header[7] as u32) << 24;
+
+            log::debug!("Read message: opcode={}, length={}", opcode, length);
+
+            if length > 65536 {
+                return Err(format!("Message too large: {} bytes", length));
+            }
+
+            let mut payload = vec![0u8; length as usize];
+            let mut total_read = 0u32;
+
+            while total_read < length {
+                let mut chunk = [0u8; 4096];
+                let to_read = std::cmp::min(4096, length - total_read);
+                let mut n: u32 = 0;
                 let r = ReadFile(
-                    handle,
-                    header.as_mut_ptr(),
-                    8,
-                    &mut bytes_read,
+                    self.pipe_handle,
+                    chunk.as_mut_ptr(),
+                    to_read,
+                    &mut n,
                     std::ptr::null_mut(),
                 );
-                if r == 0 || bytes_read < 8 {
-                    let _ = tx.send(Err(format!("Failed to read header, error: {}, bytes: {}", GetLastError(), bytes_read)));
-                    return;
+                if r == 0 || n == 0 {
+                    return Err(format!("Failed to read payload, error: {}", GetLastError()));
                 }
-
-                let opcode = header[0] as u32
-                    | (header[1] as u32) << 8
-                    | (header[2] as u32) << 16
-                    | (header[3] as u32) << 24;
-                let length = header[4] as u32
-                    | (header[5] as u32) << 8
-                    | (header[6] as u32) << 16
-                    | (header[7] as u32) << 24;
-
-                log::debug!("Read message: opcode={}, length={}", opcode, length);
-
-                if length > 65536 {
-                    let _ = tx.send(Err(format!("Message too large: {} bytes", length)));
-                    return;
-                }
-
-                let mut payload = vec![0u8; length as usize];
-                let mut total_read = 0u32;
-
-                while total_read < length {
-                    let mut chunk = [0u8; 4096];
-                    let to_read = std::cmp::min(4096, length - total_read);
-                    let mut n: u32 = 0;
-                    let r = ReadFile(
-                        handle,
-                        chunk.as_mut_ptr(),
-                        to_read,
-                        &mut n,
-                        std::ptr::null_mut(),
-                    );
-                    if r == 0 || n == 0 {
-                        let _ = tx.send(Err(format!("Failed to read payload, error: {}", GetLastError())));
-                        return;
-                    }
-                    payload[total_read as usize..(total_read + n) as usize].copy_from_slice(&chunk[..n as usize]);
-                    total_read += n;
-                }
-
-                let _ = tx.send(String::from_utf8(payload).map_err(|e| format!("Invalid UTF-8: {}", e)));
+                payload[total_read as usize..(total_read + n) as usize].copy_from_slice(&chunk[..n as usize]);
+                total_read += n;
             }
-        });
 
-        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
-            Ok(result) => result,
-            Err(_) => Err("Timeout reading Discord response".to_string()),
+            String::from_utf8(payload).map_err(|e| format!("Invalid UTF-8: {}", e))
         }
     }
 

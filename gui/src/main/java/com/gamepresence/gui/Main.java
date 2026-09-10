@@ -59,7 +59,7 @@ import javafx.util.Duration;
 public class Main extends Application {
 
     private static final String APP_NAME    = "XGameStats";
-    private static final String APP_VERSION = "0.6.0";
+    private static final String APP_VERSION = "0.7.0";
     private static final String CONFIG_DIR  = System.getProperty("user.home")
             + File.separator + "AppData" + File.separator + "Local"
             + File.separator + "XGameStats";
@@ -74,7 +74,6 @@ public class Main extends Application {
     private Process          engineProcess;
     private ListView<String> processList;
     private TextArea         logArea;
-    private boolean          userScrolledUp = false;
     private Label            statusLabel;
     private StackPane        contentPane;
     private HBox             tabBar;
@@ -261,8 +260,12 @@ public class Main extends Application {
         root.setBottom(createStatusBar());
 
         Scene s = new Scene(root, 820, 560);
-        String css = getClass().getResource("/dark-theme.css").toExternalForm();
-        s.getStylesheets().add(css);
+        var cssUrl = getClass().getResource("/dark-theme.css");
+        if (cssUrl != null) {
+            s.getStylesheets().add(cssUrl.toExternalForm());
+        }
+        stage.setTitle(APP_NAME);
+        loadIcon(stage);
         stage.setScene(s);
         stage.show();
         centerOnScreen(stage);
@@ -305,11 +308,27 @@ public class Main extends Application {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button btnMin = windowBtn("minimize.svg");
+        Button btnMin = new Button("\uE921");
+        btnMin.setFont(Font.font("Segoe MDL2 Assets", 14));
+        btnMin.setMinSize(46, 32);
+        btnMin.setMaxSize(46, 32);
+        btnMin.setStyle("-fx-background-color: transparent; -fx-text-fill: #828291; -fx-border-color: transparent;");
+        btnMin.setOnMouseEntered(e -> btnMin.setStyle("-fx-background-color: #2A2A35; -fx-text-fill: #DCDCE6; -fx-border-color: #3A3A45; -fx-border-width: 1;"));
+        btnMin.setOnMouseExited(e -> btnMin.setStyle("-fx-background-color: transparent; -fx-text-fill: #828291; -fx-border-color: transparent;"));
         btnMin.setOnAction(e -> minimizeToTray(stage));
 
-        Button btnClose = windowBtn("close.svg");
-        btnClose.setOnAction(e -> minimizeToTray(stage));
+        Button btnClose = new Button("\uE8BB");
+        btnClose.setFont(Font.font("Segoe MDL2 Assets", 14));
+        btnClose.setMinSize(46, 32);
+        btnClose.setMaxSize(46, 32);
+        btnClose.setStyle("-fx-background-color: transparent; -fx-text-fill: #828291; -fx-border-color: transparent;");
+        btnClose.setOnMouseEntered(e -> btnClose.setStyle("-fx-background-color: #E81123; -fx-text-fill: #FFFFFF; -fx-border-color: transparent;"));
+        btnClose.setOnMouseExited(e -> btnClose.setStyle("-fx-background-color: transparent; -fx-text-fill: #828291; -fx-border-color: transparent;"));
+        btnClose.setOnAction(e -> {
+            stopEngine();
+            Platform.exit();
+            System.exit(0);
+        });
 
         HBox btns = new HBox(8);
         btns.setAlignment(Pos.CENTER_RIGHT);
@@ -388,9 +407,8 @@ public class Main extends Application {
 
     private void showNotification(String message) {
         Stage popup = new Stage();
-        popup.initStyle(StageStyle.UNDECORATED);
-        popup.setAlwaysOnTop(true);
         popup.initStyle(StageStyle.TRANSPARENT);
+        popup.setAlwaysOnTop(true);
 
         VBox root = new VBox(8);
         root.setPadding(new Insets(14, 18, 14, 18));
@@ -441,9 +459,15 @@ public class Main extends Application {
 
     private void exitApp() {
         stopEngine();
-        if (trayIcon != null) SystemTray.getSystemTray().remove(trayIcon);
-        Platform.exit();
-        System.exit(0);
+        if (trayIcon != null) {
+            SystemTray.getSystemTray().remove(trayIcon);
+            trayIcon = null;
+        }
+        new Thread(() -> {
+            try { Thread.sleep(100); } catch (InterruptedException ignored) {}
+            Platform.exit();
+            System.exit(0);
+        }).start();
     }
 
     private java.awt.Image buildTrayImage() {
@@ -469,14 +493,15 @@ public class Main extends Application {
     private Button windowBtn(String iconName) {
         Button b = new Button();
         b.setBackground(Background.EMPTY);
-        b.setMinSize(32, 32);
-        b.setMaxSize(32, 32);
+        b.setMinSize(40, 32);
+        b.setMaxSize(40, 32);
         b.setFocusTraversable(false);
         b.setPadding(new Insets(0));
+        b.setStyle("-fx-background-color: #1C1C24; -fx-border-color: #2A2A35; -fx-border-width: 1;");
 
         ImageView iv = new ImageView();
-        iv.setFitWidth(18);
-        iv.setFitHeight(18);
+        iv.setFitWidth(16);
+        iv.setFitHeight(16);
         iv.setSmooth(true);
         b.setGraphic(iv);
 
@@ -489,9 +514,13 @@ public class Main extends Application {
 
         if (hoverPath != null) {
             Image hoverImg = new Image(new File(hoverPath).toURI().toString());
-            b.setOnMouseEntered(e -> iv.setImage(hoverImg));
+            b.setOnMouseEntered(e -> {
+                iv.setImage(hoverImg);
+                b.setStyle("-fx-background-color: #2A2A35; -fx-border-color: #3A3A45; -fx-border-width: 1;");
+            });
             b.setOnMouseExited(e -> {
                 if (normalPath != null) iv.setImage(new Image(new File(normalPath).toURI().toString()));
+                b.setStyle("-fx-background-color: #1C1C24; -fx-border-color: #2A2A35; -fx-border-width: 1;");
             });
         }
 
@@ -683,24 +712,16 @@ public class Main extends Application {
 
     private VBox buildLogTab() {
         VBox p = new VBox(10);
-        logArea = new TextArea();
-        logArea.setEditable(false);
-        logArea.setFont(Font.font("Consolas", 12));
-        logArea.setStyle("-fx-control-inner-background: #0E0E12; -fx-text-fill: #DCDCE6; -fx-border-color: #1C1C24;");
-        logArea.setPrefHeight(320);
-        logArea.setWrapText(false);
+        
+        if (logArea == null) {
+            logArea = new TextArea();
+            logArea.setEditable(false);
+            logArea.setFont(Font.font("Consolas", 12));
+            logArea.setStyle("-fx-control-inner-background: #0E0E12; -fx-text-fill: #DCDCE6; -fx-border-color: #1C1C24;");
+            logArea.setPrefHeight(320);
+            logArea.setWrapText(false);
+        }
 
-        logArea.textProperty().addListener((obs, old, val) -> {
-            if (!userScrolledUp) {
-                logArea.setScrollTop(Double.MAX_VALUE);
-            }
-        });
-
-        logArea.scrollTopProperty().addListener((obs, old, val) -> {
-            double max = logArea.heightProperty().doubleValue();
-            double top = val.doubleValue();
-            userScrolledUp = top < max && top > 0;
-        });
         VBox.setVgrow(logArea, Priority.ALWAYS);
 
         Button clr = accentBtn(t("btn_clear"));
@@ -778,7 +799,10 @@ public class Main extends Application {
             {t("faq_q1"), t("faq_a1")},
             {t("faq_q2"), t("faq_a2")},
             {t("faq_q3"), t("faq_a3")},
-            {t("faq_q4"), t("faq_a4")}
+            {t("faq_q4"), t("faq_a4")},
+            {t("faq_q5"), t("faq_a5")},
+            {t("faq_q6"), t("faq_a6")},
+            {t("faq_q7"), t("faq_a7")}
         };
 
         VBox items = new VBox(10);
@@ -872,7 +896,7 @@ public class Main extends Application {
 
     private void showConfirmDialog(Stage owner, String message, Runnable onOk) {
         Stage d = new Stage();
-        d.initStyle(StageStyle.UNDECORATED);
+        d.initStyle(StageStyle.TRANSPARENT);
         d.initModality(Modality.APPLICATION_MODAL);
         d.initOwner(owner);
 
@@ -900,7 +924,6 @@ public class Main extends Application {
 
         Scene sc = new Scene(root, 380, 160);
         sc.setFill(Color.TRANSPARENT);
-        d.initStyle(StageStyle.TRANSPARENT);
         d.setScene(sc);
         d.show();
 
@@ -1078,12 +1101,17 @@ public class Main extends Application {
 
     private void startEngine() {
         try {
+            if (engineProcess != null && engineProcess.isAlive()) {
+                engineProcess.destroy();
+                engineProcess = null;
+            }
             String exe = findExe();
             if (exe == null) { log("[XGS] Engine not found"); return; }
             new File(CONFIG_DIR).mkdirs();
             ProcessBuilder pb = new ProcessBuilder(exe, "engine");
             pb.directory(new File(CONFIG_DIR));
             pb.redirectErrorStream(true);
+            pb.redirectInput(ProcessBuilder.Redirect.from(new File("NUL")));
             engineProcess = pb.start();
 
             new Thread(() -> {
@@ -1133,6 +1161,7 @@ public class Main extends Application {
     private void stopEngine() {
         if (engineProcess != null && engineProcess.isAlive()) {
             engineProcess.destroy();
+            engineProcess = null;
             statusLabel.setText(t("status_stopped"));
             statusLabel.setTextFill(RED);
             log(t("log_engine_stopped"));
@@ -1191,9 +1220,9 @@ public class Main extends Application {
     }
 
     private void centerOnScreen(Stage s) {
-        var b = Screen.getPrimary().getBounds();
-        s.setX((b.getWidth() - s.getWidth()) / 2);
-        s.setY((b.getHeight() - s.getHeight()) / 2);
+        var b = Screen.getPrimary().getVisualBounds();
+        s.setX(b.getMinX() + (b.getWidth() - s.getWidth()) / 2);
+        s.setY(b.getMinY() + (b.getHeight() - s.getHeight()) / 2);
     }
 
     public static void main(String[] args) { launch(args); }

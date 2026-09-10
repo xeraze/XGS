@@ -23,6 +23,8 @@ struct XGameStats {
     discord_connections: HashMap<String, DiscordIpc>,
     start_time: i64,
     last_connect_attempt: HashMap<String, std::time::Instant>,
+    logged_running: HashMap<String, bool>,
+    cached_large_image: HashMap<String, Option<String>>,
 }
 
 impl XGameStats {
@@ -38,6 +40,8 @@ impl XGameStats {
                 .unwrap()
                 .as_secs() as i64,
             last_connect_attempt: HashMap::new(),
+            logged_running: HashMap::new(),
+            cached_large_image: HashMap::new(),
         }
     }
 
@@ -117,13 +121,71 @@ impl XGameStats {
             .as_ref()
             .map(|t| self.render_template(t, game_config));
 
+        let large_image = if let Some(ref img) = game_config.rpc_template.large_image {
+            if is_discord_large_image_key(img) {
+                log::info!("[XGS] Using image from config: {}", img);
+                Some(img.clone())
+            } else {
+                log::warn!(
+                    "[XGS] Ignoring local image path as large_image (Discord can't display local files): {}",
+                    img
+                );
+                self.cached_large_image.get(&game_config.process_name).cloned().flatten()
+            }
+        } else {
+            self.cached_large_image.get(&game_config.process_name).cloned().flatten()
+        };
+
+        if large_image.is_none() {
+            if let Some(path) = self.get_process_path(&game_config.process_name) {
+                let steam_app_id = game_config.steam_app_id.or_else(|| GameConfig::find_steam_app_id(&path));
+
+                let icon = if let Some(app_id) = steam_app_id {
+                    let url = GameConfig::get_steam_capsule_url(app_id);
+                    log::info!("[XGS] Using Steam capsule art (App ID {}): {}", app_id, url);
+                    Some(url)
+                } else if let Some(icon_path) = GameConfig::find_game_icon(&path) {
+                    // Локальный файл Discord показать не может — только лог.
+                    log::warn!(
+                        "[XGS] Found local game icon '{}' but Discord cannot display local files; skipping",
+                        icon_path.display()
+                    );
+                    None
+                } else {
+                    None
+                };
+                self.cached_large_image.insert(game_config.process_name.clone(), icon);
+            }
+        }
+
+        // После сканирования в кэше мог появиться Steam-арт — перечитываем,
+        // чтобы использовать его уже в текущем обновлении.
+        let large_image = if large_image.is_none() {
+            self.cached_large_image.get(&game_config.process_name).cloned().flatten()
+        } else {
+            large_image
+        };
+
+        // small_image: тоже только asset-ключ или удалённый URL.
+        let small_image = match &game_config.rpc_template.small_image {
+            Some(img) if is_discord_large_image_key(img) => Some(img.clone()),
+            Some(img) => {
+                log::warn!(
+                    "[XGS] Ignoring local image path as small_image (Discord can't display local files): {}",
+                    img
+                );
+                None
+            }
+            None => None,
+        };
+
         let presence = DiscordPresence {
             name: game_config.process_name.replace(".exe", ""),
             details,
             state,
-            large_image: game_config.rpc_template.large_image.clone(),
+            large_image,
             large_image_text,
-            small_image: game_config.rpc_template.small_image.clone(),
+            small_image,
             small_image_text,
             start_timestamp: Some(self.start_time),
         };
@@ -136,9 +198,11 @@ impl XGameStats {
                     e
                 );
                 self.discord_connections.remove(&app_id);
+                self.logged_running.remove(&app_id);
                 log::info!("[XGS] Removed broken connection for {}, will retry next cycle", app_id);
-            } else {
+            } else if !self.logged_running.get(&app_id).unwrap_or(&false) {
                 log::info!("[XGS] Running");
+                self.logged_running.insert(app_id.clone(), true);
             }
         }
     }
@@ -151,13 +215,40 @@ impl XGameStats {
         }
     }
 
+    fn get_process_path(&self, process_name: &str) -> Option<std::path::PathBuf> {
+        use std::process::Command;
+
+        let safe_name: String = process_name
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '.' || *c == '_' || *c == '-' || *c == ' ')
+            .collect();
+
+        let output = Command::new("wmic")
+            .args(&["process", "where", &format!("name='{}'", safe_name), "get", "ExecutablePath"])
+            .output()
+            .ok()?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let lines: Vec<&str> = stdout.lines().collect();
+
+        if lines.len() > 1 {
+            let path_str = lines[1].trim();
+            if !path_str.is_empty() {
+                return Some(std::path::PathBuf::from(path_str));
+            }
+        }
+
+        None
+    }
+
     fn render_template(&self, template: &str, game_config: &GameConfig) -> String {
         let mut result = template.to_string();
 
         if let Some(ref pointers) = game_config.pointers {
+            let scanner = Scanner::open(&game_config.process_name);
             for (key, pointer) in pointers {
                 let placeholder = format!("{{{}}}", key);
-                let value = self.read_game_value(game_config, pointer);
+                let value = self.read_game_value(&scanner, game_config, pointer);
                 result = result.replace(&placeholder, &value);
             }
         }
@@ -165,8 +256,7 @@ impl XGameStats {
         result
     }
 
-    fn read_game_value(&self, game_config: &GameConfig, pointer: &config::PointerConfig) -> String {
-        let scanner = Scanner::open(&game_config.process_name);
+    fn read_game_value(&self, scanner: &Option<Scanner>, game_config: &GameConfig, pointer: &config::PointerConfig) -> String {
         if let Some(scanner) = scanner {
             let value_any = match game_config.scan_type {
                 config::ScanType::Offsets => {
@@ -245,6 +335,19 @@ fn parse_base_offset(base: &str) -> usize {
     } else {
         0
     }
+}
+
+/// Discord умеет показывать только удалённые URL (http/https, mp:external).
+fn is_remote_image_url(img: &str) -> bool {
+    img.starts_with("http://")
+        || img.starts_with("https://")
+        || img.starts_with("mp:")
+}
+
+/// Валидный ключ для large/small image: либо удалённый URL, либо asset-ключ
+/// из Developer Portal (без слешей, двоеточий и т.п. — не локальный путь).
+fn is_discord_large_image_key(img: &str) -> bool {
+    is_remote_image_url(img) || (!img.contains('\\') && !img.contains('/') && !img.contains(':'))
 }
 
 const VERSION_URL: &str = "https://raw.githubusercontent.com/user/XGameStats/main/version.json";
@@ -365,7 +468,7 @@ fn launch_gui() {
 }
 
 fn print_usage() {
-    println!("XGameStats v0.6.0 - Discord Rich Presence Engine");
+    println!("XGameStats v0.7.0 - Discord Rich Presence Engine");
     println!();
     println!("Usage: xgs.exe <command>");
     println!();

@@ -33,6 +33,8 @@ bool scanner_read_by_config(ScannerHandle* handle,
                             int value_type,
                             void* out_value);
 
+bool scanner_read_memory(ScannerHandle* handle, uintptr_t address, uint8_t* buffer, size_t size);
+
 #ifdef __cplusplus
 }
 #endif

@@ -2,8 +2,8 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-const VERSION: &str = "0.6.0";
-const GITHUB_BASE: &str = "https://github.com/user/XGameStats/releases/download/v0.6.0";
+const VERSION: &str = "0.7.0";
+const GITHUB_BASE: &str = "https://github.com/user/XGameStats/releases/download/v0.7.0";
 
 fn main() {
     print_header();
